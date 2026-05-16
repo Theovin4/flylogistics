@@ -5,7 +5,7 @@ import Image from "next/image";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -58,6 +58,8 @@ export default function MapView() {
   );
 
   async function saveDriverPhoto(driverId: number, asset: UploadedAsset) {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) throw new Error("Supabase public environment variables are not configured.");
     setPhotoSavingDriverId(driverId);
     const { data, error } = await supabase
       .from("drivers")
@@ -81,6 +83,12 @@ export default function MapView() {
     let mounted = true;
 
     async function fetchDrivers() {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        setError("Supabase public environment variables are not configured.");
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError(null);
       const { data, error } = await supabase.from("drivers").select("*").order("id", { ascending: true });
@@ -96,6 +104,13 @@ export default function MapView() {
     }
 
     fetchDrivers();
+
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      return () => {
+        mounted = false;
+      };
+    }
 
     const channel = supabase
       .channel("drivers-live")

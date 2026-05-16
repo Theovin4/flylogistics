@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { CheckCircle2, Loader2, PackagePlus, RefreshCw, Truck } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import { shipmentStatuses, type DriverSummary, type ShipmentRecord, type ShipmentStatus } from "@/lib/shipments";
 import type { UploadedAsset } from "@/lib/cloudinary";
 import { CloudinaryUpload } from "@/components/cloudinary/cloudinary-upload";
@@ -51,6 +51,11 @@ export function AdminShipmentManager() {
   }
 
   async function loadDrivers() {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      setDrivers([]);
+      return;
+    }
     const { data } = await supabase.from("drivers").select("id,name,status,phone,photo_url,latitude,longitude").order("id", { ascending: true });
     setDrivers((data as DriverSummary[] | null) ?? []);
   }
