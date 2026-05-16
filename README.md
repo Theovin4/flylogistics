@@ -36,6 +36,7 @@ CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=
+NEXT_PUBLIC_CLOUDINARY_API_KEY=
 ```
 
 Add a `photo_url` text column to the Supabase `drivers` table so uploaded driver profile images can be stored:

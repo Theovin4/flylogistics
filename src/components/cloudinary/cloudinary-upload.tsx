@@ -42,8 +42,9 @@ export function CloudinaryUpload({ folder, label, description, variant = "button
   const [state, setState] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
 
-  if (!cloudName) {
+  if (!cloudName || !apiKey) {
     return (
       <div className={variant === "panel" ? "rounded-md border bg-background/45 p-4" : ""}>
         {variant === "panel" && (
@@ -61,13 +62,16 @@ export function CloudinaryUpload({ folder, label, description, variant = "button
           <ImagePlus />
           Configure Cloudinary
         </Button>
-        <p className="mt-2 text-xs text-muted-foreground">Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME to enable uploads.</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_API_KEY to enable uploads.
+        </p>
       </div>
     );
   }
 
   return (
     <CldUploadWidget
+      config={{ cloud: { cloudName, apiKey } }}
       signatureEndpoint="/api/cloudinary/sign"
       options={{
         folder,
