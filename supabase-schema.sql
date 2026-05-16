@@ -55,3 +55,6 @@ create index if not exists shipments_tracking_id_idx on public.shipments (tracki
 create index if not exists shipments_status_idx on public.shipments (status);
 create index if not exists shipments_driver_id_idx on public.shipments (driver_id);
 create index if not exists quote_requests_status_idx on public.quote_requests (status);
+
+alter table public.drivers add column if not exists phone text;
+alter table public.drivers add column if not exists photo_url text;
