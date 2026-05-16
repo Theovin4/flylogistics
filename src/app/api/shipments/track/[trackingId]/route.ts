@@ -24,7 +24,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ trackingId
     if (trackingId.toUpperCase() === demoShipment.tracking_id) {
       return NextResponse.json(normalizeShipment(demoShipment));
     }
-    return NextResponse.json({ error: "Unable to load shipment." }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load shipment.", details: error.message, code: error.code }, { status: 500 });
   }
 
   if (!data) {

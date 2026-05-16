@@ -32,7 +32,7 @@ export async function GET() {
 
   if (error) {
     console.error(error);
-    return NextResponse.json({ error: "Unable to load shipments." }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load shipments.", details: error.message, code: error.code }, { status: 500 });
   }
 
   return NextResponse.json(data ?? []);
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabase.from("shipments").insert(payload).select("*").single();
   if (error) {
     console.error(error);
-    return NextResponse.json({ error: "Unable to create shipment." }, { status: 500 });
+    return NextResponse.json({ error: "Unable to create shipment.", details: error.message, code: error.code }, { status: 500 });
   }
 
   return NextResponse.json(data as ShipmentRecord, { status: 201 });
