@@ -1,0 +1,9 @@
+<svg width="1024" height="256" viewBox="0 0 1024 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="256" rx="48" fill="#fbfaf7"/>
+  <path d="M56 202 120 40h112l-52 48h-48l-16 40h80l-48 48h-48l-12 26H56Z" fill="url(#g)"/>
+  <path d="M164 68c28 8 50 24 64 52-28-12-52-12-80-4l16-48Z" fill="#070911" fill-opacity=".6"/>
+  <path d="M44 152c40-28 92-36 152-24" stroke="#ff9f1c" stroke-width="12" stroke-linecap="round"/>
+  <text x="292" y="119" fill="#111827" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="800">Fly Logistics</text>
+  <text x="296" y="166" fill="#d96b00" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" letter-spacing="8">AI FREIGHT OS</text>
+  <defs><linearGradient id="g" x1="52" y1="32" x2="240" y2="220" gradientUnits="userSpaceOnUse"><stop stop-color="#fff4dc"/><stop offset=".4" stop-color="#ff9f1c"/><stop offset="1" stop-color="#ff4d00"/></linearGradient></defs>
+</svg>
