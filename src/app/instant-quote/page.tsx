@@ -2,10 +2,7 @@ import { Calculator, Clock, PackageCheck } from "lucide-react";
 import { SiteFooter } from "@/components/brand/site-footer";
 import { SiteHeader } from "@/components/brand/site-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { QuoteRequestForm } from "@/components/shipments/quote-request-form";
 
 export default function InstantQuotePage() {
   return (
@@ -31,20 +28,7 @@ export default function InstantQuotePage() {
             ))}
           </div>
         </section>
-        <Card className="glass">
-          <CardHeader><CardTitle>Instant quote</CardTitle></CardHeader>
-          <CardContent>
-            <form className="grid gap-4">
-              {["Origin", "Destination", "Weight kg", "Cargo value", "Service level"].map((field) => (
-                <div key={field} className="grid gap-2">
-                  <Label htmlFor={field}>{field}</Label>
-                  <Input id={field} placeholder={field} />
-                </div>
-              ))}
-              <Button type="submit" size="lg">Generate AI quote</Button>
-            </form>
-          </CardContent>
-        </Card>
+        <QuoteRequestForm />
       </main>
       <SiteFooter />
     </>

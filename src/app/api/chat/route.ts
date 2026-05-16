@@ -1,10 +1,34 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getGroq } from "@/lib/groq";
+import { normalizeShipment, type ShipmentRecord } from "@/lib/shipments";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 const chatSchema = z.object({
   message: z.string().trim().min(1).max(2000)
 });
+
+function findTrackingId(message: string) {
+  return message.match(/\bFLY-\d{4}-[A-Z0-9]{5,}\b/i)?.[0]?.toUpperCase() ?? null;
+}
+
+async function getShipmentContext(trackingId: string) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("shipments")
+    .select("*, assigned_driver:drivers(id,name,status,phone,photo_url,latitude,longitude)")
+    .eq("tracking_id", trackingId)
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) console.error(error);
+    return null;
+  }
+
+  return normalizeShipment(data as ShipmentRecord);
+}
 
 export async function POST(req: Request) {
   try {
@@ -21,6 +45,9 @@ export async function POST(req: Request) {
       );
     }
 
+    const trackingId = findTrackingId(parsed.data.message);
+    const shipmentContext = trackingId ? await getShipmentContext(trackingId) : null;
+
     const response = await groq.chat.completions.create({
       messages: [
         {
@@ -34,7 +61,11 @@ Rules:
 - Ask for pickup location, delivery location, package type, and urgency when needed.
 - Do not mention DHL, FedEx, UPS, or other competitors unless the user asks.
 - Focus on Fly Logistics services.
-- If tracking is requested, ask for tracking ID.`,
+- If tracking is requested without a tracking ID, ask for tracking ID.
+- If shipment context is provided below, answer from it and mention status, ETA, route, driver, and next step.
+
+Shipment context:
+${shipmentContext ? JSON.stringify(shipmentContext) : trackingId ? `No shipment found for ${trackingId}.` : "No tracking ID provided."}`,
         },
         {
           role: "user",

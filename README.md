@@ -45,6 +45,14 @@ Add a `photo_url` text column to the Supabase `drivers` table so uploaded driver
 alter table public.drivers add column if not exists photo_url text;
 ```
 
+For the full product flow, run [supabase-schema.sql](./supabase-schema.sql) in Supabase SQL editor. It creates:
+
+- `drivers`
+- `quote_requests`
+- `shipments`
+
+The app uses server routes with `SUPABASE_SERVICE_ROLE_KEY` for shipment creation, quote storage, status updates, and proof-of-delivery writes.
+
 ## Production notes
 
 - Use Postgres with Prisma migrations for data durability.

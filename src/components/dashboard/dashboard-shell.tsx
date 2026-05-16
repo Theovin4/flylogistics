@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
+import { AdminShipmentManager } from "@/components/shipments/admin-shipment-manager";
 
 const primaryNav = [
   { label: "Admin", href: "/dashboard/admin" },
@@ -205,6 +206,7 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
               </Card>
             ))}
           </div>
+          {role === "admin" && <AdminShipmentManager />}
         </div>
       </section>
     </main>

@@ -6,7 +6,12 @@ export async function GET(_: Request, { params }: { params: Promise<{ trackingId
   const { trackingId } = await params;
   const supabase = getSupabaseAdmin();
 
-  if (!supabase) return NextResponse.json(normalizeShipment(demoShipment));
+  if (!supabase) {
+    if (trackingId.toUpperCase() === demoShipment.tracking_id) {
+      return NextResponse.json(normalizeShipment(demoShipment));
+    }
+    return NextResponse.json({ error: "Shipment tracking is not configured." }, { status: 503 });
+  }
 
   const { data, error } = await supabase
     .from("shipments")
@@ -20,7 +25,9 @@ export async function GET(_: Request, { params }: { params: Promise<{ trackingId
   }
 
   if (!data) {
-    if (trackingId.toUpperCase() === demoShipment.tracking_id) return NextResponse.json(normalizeShipment(demoShipment));
+    if (trackingId.toUpperCase() === demoShipment.tracking_id) {
+      return NextResponse.json(normalizeShipment(demoShipment));
+    }
     return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
   }
 
