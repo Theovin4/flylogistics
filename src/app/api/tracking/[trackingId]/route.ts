@@ -10,7 +10,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ trackingId
 
   const { data, error } = await supabase
     .from("shipments")
-    .select("*, assigned_driver:drivers(id,name,status,phone,photo_url,latitude,longitude)")
+    .select("*, assigned_driver:drivers!shipments_driver_id_fkey(id,name,status,phone,photo_url,latitude,longitude)")
     .eq("tracking_id", trackingId.toUpperCase())
     .maybeSingle();
 

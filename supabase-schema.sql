@@ -58,3 +58,40 @@ create index if not exists quote_requests_status_idx on public.quote_requests (s
 
 alter table public.drivers add column if not exists phone text;
 alter table public.drivers add column if not exists photo_url text;
+
+alter table public.quote_requests add column if not exists request_id text;
+alter table public.quote_requests add column if not exists customer_name text;
+alter table public.quote_requests add column if not exists customer_email text;
+alter table public.quote_requests add column if not exists customer_phone text;
+alter table public.quote_requests add column if not exists pickup_address text;
+alter table public.quote_requests add column if not exists delivery_address text;
+alter table public.quote_requests add column if not exists package_type text;
+alter table public.quote_requests add column if not exists weight_kg numeric;
+alter table public.quote_requests add column if not exists urgency text default 'standard';
+alter table public.quote_requests add column if not exists notes text;
+alter table public.quote_requests add column if not exists estimated_price numeric;
+alter table public.quote_requests add column if not exists estimated_eta_hours integer;
+alter table public.quote_requests add column if not exists status text default 'NEW';
+alter table public.quote_requests add column if not exists created_at timestamptz default now();
+create unique index if not exists quote_requests_request_id_idx on public.quote_requests (request_id);
+
+alter table public.shipments add column if not exists tracking_id text;
+alter table public.shipments add column if not exists customer_name text;
+alter table public.shipments add column if not exists customer_email text;
+alter table public.shipments add column if not exists customer_phone text;
+alter table public.shipments add column if not exists pickup_address text;
+alter table public.shipments add column if not exists delivery_address text;
+alter table public.shipments add column if not exists package_type text;
+alter table public.shipments add column if not exists weight_kg numeric;
+alter table public.shipments add column if not exists urgency text default 'standard';
+alter table public.shipments add column if not exists status text default 'BOOKED';
+alter table public.shipments add column if not exists driver_id bigint references public.drivers(id) on delete set null;
+alter table public.shipments add column if not exists current_lat double precision;
+alter table public.shipments add column if not exists current_lng double precision;
+alter table public.shipments add column if not exists eta text;
+alter table public.shipments add column if not exists quoted_price numeric;
+alter table public.shipments add column if not exists package_image_url text;
+alter table public.shipments add column if not exists proof_image_url text;
+alter table public.shipments add column if not exists timeline jsonb default '[]'::jsonb;
+alter table public.shipments add column if not exists created_at timestamptz default now();
+alter table public.shipments add column if not exists updated_at timestamptz default now();

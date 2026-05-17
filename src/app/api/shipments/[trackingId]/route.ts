@@ -34,7 +34,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ tr
     .from("shipments")
     .update(updates)
     .eq("tracking_id", trackingId.toUpperCase())
-    .select("*, assigned_driver:drivers(id,name,status,phone,photo_url,latitude,longitude)")
+    .select("*, assigned_driver:drivers!shipments_driver_id_fkey(id,name,status,phone,photo_url,latitude,longitude)")
     .single();
 
   if (error) {
