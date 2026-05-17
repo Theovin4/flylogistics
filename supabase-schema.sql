@@ -69,6 +69,7 @@ create index if not exists user_profiles_role_idx on public.user_profiles (role)
 
 alter table public.drivers add column if not exists phone text;
 alter table public.drivers add column if not exists photo_url text;
+alter table public.drivers add column if not exists created_at timestamptz default now();
 
 alter table public.user_profiles add column if not exists email text;
 alter table public.user_profiles add column if not exists full_name text;

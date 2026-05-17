@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/request-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
-const driverSelect = "id,name,status,phone,photo_url,latitude,longitude,created_at";
+const driverSelect = "id,name,status,phone,photo_url,latitude,longitude";
 
 export async function GET(request: Request) {
   const access = await requireRole(request, ["admin", "dispatcher", "driver"]);
