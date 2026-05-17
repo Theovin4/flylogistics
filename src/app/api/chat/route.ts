@@ -30,6 +30,18 @@ async function getShipmentContext(trackingId: string) {
   return normalizeShipment(data as ShipmentRecord);
 }
 
+function fallbackReply(trackingId: string | null, shipmentContext: Awaited<ReturnType<typeof getShipmentContext>>) {
+  if (shipmentContext) {
+    return `Tracking ${shipmentContext.trackingId} is currently ${shipmentContext.status.replaceAll("_", " ")}. Pickup: ${shipmentContext.pickupAddress}. Delivery: ${shipmentContext.deliveryAddress}. ETA: ${shipmentContext.eta}. Assigned driver: ${shipmentContext.assignedDriver?.name ?? "not assigned yet"}.`;
+  }
+
+  if (trackingId) {
+    return `I could not find shipment ${trackingId} yet. Please confirm the tracking ID or contact Fly Logistics support so we can check the shipment record.`;
+  }
+
+  return "I can help with shipment tracking, quote requests, pickup planning, delivery urgency, and package requirements. Please share a tracking ID or shipment details.";
+}
+
 export async function POST(req: Request) {
   try {
     const parsed = chatSchema.safeParse(await req.json());
@@ -38,21 +50,19 @@ export async function POST(req: Request) {
     }
 
     const groq = getGroq();
-    if (!groq) {
-      return NextResponse.json(
-        { error: "Groq is not configured. Add GROQ_API_KEY to your environment variables." },
-        { status: 503 }
-      );
-    }
-
     const trackingId = findTrackingId(parsed.data.message);
     const shipmentContext = trackingId ? await getShipmentContext(trackingId) : null;
 
-    const response = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "system",
-          content: `You are Fly Logistics AI, the official assistant for Fly Logistics.
+    if (!groq) {
+      return NextResponse.json({ reply: fallbackReply(trackingId, shipmentContext), mode: "fallback" });
+    }
+
+    try {
+      const response = await groq.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content: `You are Fly Logistics AI, the official assistant for Fly Logistics.
 
 Answer like a helpful logistics company representative.
 
@@ -66,18 +76,22 @@ Rules:
 
 Shipment context:
 ${shipmentContext ? JSON.stringify(shipmentContext) : trackingId ? `No shipment found for ${trackingId}.` : "No tracking ID provided."}`,
-        },
-        {
-          role: "user",
-          content: parsed.data.message,
-        },
-      ],
-      model: "llama-3.3-70b-versatile",
-    });
+          },
+          {
+            role: "user",
+            content: parsed.data.message,
+          },
+        ],
+        model: "llama-3.3-70b-versatile",
+      });
 
-    return NextResponse.json({
-      reply: response.choices[0]?.message?.content ?? "I could not generate a response. Please try again.",
-    });
+      return NextResponse.json({
+        reply: response.choices[0]?.message?.content ?? fallbackReply(trackingId, shipmentContext),
+      });
+    } catch (error) {
+      console.error(error);
+      return NextResponse.json({ reply: fallbackReply(trackingId, shipmentContext), mode: "fallback" });
+    }
   } catch (error) {
     console.error(error);
 
