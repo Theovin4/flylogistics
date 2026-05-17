@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getGroq } from "@/lib/groq";
-import { normalizeShipment, type ShipmentRecord } from "@/lib/shipments";
+import { demoShipment, normalizeShipment, type ShipmentRecord } from "@/lib/shipments";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 const chatSchema = z.object({
@@ -13,13 +13,19 @@ function findTrackingId(message: string) {
 }
 
 async function getShipmentContext(trackingId: string) {
+  const normalizedTrackingId = trackingId.toUpperCase();
+
+  if (normalizedTrackingId === demoShipment.tracking_id) {
+    return normalizeShipment(demoShipment);
+  }
+
   const supabase = getSupabaseAdmin();
   if (!supabase) return null;
 
   const { data, error } = await supabase
     .from("shipments")
     .select("*, assigned_driver:drivers(id,name,status,phone,photo_url,latitude,longitude)")
-    .eq("tracking_id", trackingId)
+    .eq("tracking_id", normalizedTrackingId)
     .maybeSingle();
 
   if (error || !data) {
@@ -43,6 +49,9 @@ function fallbackReply(trackingId: string | null, shipmentContext: Awaited<Retur
 }
 
 export async function POST(req: Request) {
+  let trackingId: string | null = null;
+  let shipmentContext: Awaited<ReturnType<typeof getShipmentContext>> = null;
+
   try {
     const parsed = chatSchema.safeParse(await req.json());
     if (!parsed.success) {
@@ -50,8 +59,8 @@ export async function POST(req: Request) {
     }
 
     const groq = getGroq();
-    const trackingId = findTrackingId(parsed.data.message);
-    const shipmentContext = trackingId ? await getShipmentContext(trackingId) : null;
+    trackingId = findTrackingId(parsed.data.message);
+    shipmentContext = trackingId ? await getShipmentContext(trackingId) : null;
 
     if (!groq) {
       return NextResponse.json({ reply: fallbackReply(trackingId, shipmentContext), mode: "fallback" });
@@ -95,9 +104,6 @@ ${shipmentContext ? JSON.stringify(shipmentContext) : trackingId ? `No shipment 
   } catch (error) {
     console.error(error);
 
-    return NextResponse.json(
-      { error: "Something went wrong" },
-      { status: 500 }
-    );
+    return NextResponse.json({ reply: fallbackReply(trackingId, shipmentContext), mode: "fallback" });
   }
 }
