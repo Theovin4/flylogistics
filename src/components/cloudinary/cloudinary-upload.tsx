@@ -5,6 +5,7 @@ import { CldUploadWidget, type CloudinaryUploadWidgetResults } from "next-cloudi
 import { ImagePlus, Loader2, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { cleanEnv } from "@/lib/env";
 import type { CloudinaryUploadFolder, UploadedAsset } from "@/lib/cloudinary";
 
 type CloudinaryInfo = {
@@ -41,8 +42,8 @@ type CloudinaryUploadProps = {
 export function CloudinaryUpload({ folder, label, description, variant = "button", onUploaded }: CloudinaryUploadProps) {
   const [state, setState] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
-  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
+  const cloudName = cleanEnv(process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME);
+  const apiKey = cleanEnv(process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY);
 
   if (!cloudName || !apiKey) {
     return (

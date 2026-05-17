@@ -1,4 +1,5 @@
 import { v2 as cloudinary } from "cloudinary";
+import { cleanEnv } from "@/lib/env";
 
 const allowedUploadFolders = [
   "fly-logistics/drivers",
@@ -19,9 +20,9 @@ export type UploadedAsset = {
 };
 
 export function getCloudinary() {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME ?? process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const cloudName = cleanEnv(process.env.CLOUDINARY_CLOUD_NAME) ?? cleanEnv(process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME);
+  const apiKey = cleanEnv(process.env.CLOUDINARY_API_KEY);
+  const apiSecret = cleanEnv(process.env.CLOUDINARY_API_SECRET);
 
   if (!cloudName || !apiKey || !apiSecret) {
     throw new Error("Cloudinary server credentials are not configured.");
@@ -42,5 +43,5 @@ export function isAllowedCloudinaryFolder(folder: string): folder is CloudinaryU
 }
 
 export function getCloudinaryCloudName() {
-  return process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? process.env.CLOUDINARY_CLOUD_NAME ?? "";
+  return cleanEnv(process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME) ?? cleanEnv(process.env.CLOUDINARY_CLOUD_NAME) ?? "";
 }

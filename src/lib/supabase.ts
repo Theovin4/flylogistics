@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { cleanEnv } from "@/lib/env";
 
 type FlyPublicDatabase = {
   public: {
@@ -43,8 +44,8 @@ type FlyPublicDatabase = {
 let browserClient: ReturnType<typeof createClient<FlyPublicDatabase>> | null = null;
 
 export function getSupabaseBrowser() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  const url = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const anonKey = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
   if (!url || !anonKey) return null;
 
