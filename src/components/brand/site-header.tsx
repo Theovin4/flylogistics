@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { ArrowRight, Clock3, Menu, X } from "lucide-react";
+import { ArrowRight, Clock3, Menu, MessageCircle, X } from "lucide-react";
 import { useState } from "react";
 import { Logo } from "@/components/brand/logo";
 import { ThemeToggle } from "@/components/brand/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { siteConfig } from "@/lib/site";
+import { getWhatsAppUrl, whatsappMessages } from "@/lib/contact";
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
@@ -38,6 +39,11 @@ export function SiteHeader() {
                 Track <Clock3 />
               </Link>
             </Button>
+            <Button asChild variant="outline" className="hidden xl:inline-flex">
+              <a href={getWhatsAppUrl(whatsappMessages.generalSupport())} target="_blank" rel="noreferrer">
+                Chat on WhatsApp <MessageCircle />
+              </a>
+            </Button>
             <Button asChild className="hidden sm:inline-flex">
               <Link href="/quote">
                 Book shipment <ArrowRight />
@@ -64,6 +70,9 @@ export function SiteHeader() {
               <Button asChild variant="outline"><Link href="/auth/login">Login</Link></Button>
               <Button asChild><Link href="/quote">Quote</Link></Button>
               <Button asChild variant="outline"><Link href="/tracking">Tracking</Link></Button>
+              <Button asChild variant="outline">
+                <a href={getWhatsAppUrl(whatsappMessages.generalSupport())} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>WhatsApp</a>
+              </Button>
               <Button asChild variant="outline"><Link href="/dashboard/admin">Admin</Link></Button>
             </div>
           </nav>

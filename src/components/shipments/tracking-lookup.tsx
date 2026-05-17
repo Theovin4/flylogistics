@@ -17,7 +17,7 @@ import {
   ShieldCheck,
   Truck
 } from "lucide-react";
-import { getWhatsAppUrl } from "@/lib/contact";
+import { getWhatsAppUrl, whatsappMessages } from "@/lib/contact";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -98,6 +98,11 @@ export function TrackingLookup() {
   }
 
   useEffect(() => {
+    const queryTrackingId = new URLSearchParams(window.location.search).get("trackingId");
+    if (queryTrackingId) void lookupShipment(queryTrackingId);
+  }, [lookupShipment]);
+
+  useEffect(() => {
     if (!result?.trackingId) return;
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
@@ -132,6 +137,16 @@ export function TrackingLookup() {
   }, [result]);
 
   const visibleStatus = result ? formatStatus(result.status) : "Awaiting lookup";
+  const supportMessage = result
+    ? whatsappMessages.trackingStatus({
+        trackingId: result.trackingId,
+        status: result.status,
+        eta: result.eta,
+        pickupAddress: result.pickupAddress,
+        deliveryAddress: result.deliveryAddress,
+        assignedDriver: result.assignedDriver
+      })
+    : whatsappMessages.trackingHelp(trackingId);
 
   return (
     <div className="grid gap-8 lg:grid-cols-[0.78fr_1.22fr]">
@@ -170,9 +185,9 @@ export function TrackingLookup() {
                   </Link>
                 </Button>
                 <Button asChild variant="outline" size="sm">
-                  <a href={getWhatsAppUrl("Hi Fly Logistics, I need urgent help tracking a shipment.")} target="_blank" rel="noreferrer">
+                  <a href={getWhatsAppUrl(supportMessage)} target="_blank" rel="noreferrer">
                     <MessageCircle />
-                    WhatsApp support
+                    Chat on WhatsApp
                   </a>
                 </Button>
               </div>

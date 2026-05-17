@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Route } from "next";
+import { MessageCircle } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
+import { getWhatsAppUrl, whatsappMessages } from "@/lib/contact";
 
 const columns = [
   { title: "Platform", links: ["Tracking", "Quote", "AI Logistics", "Fleet Management"] },
@@ -21,6 +23,15 @@ export function SiteFooter() {
           <p className="mt-5 max-w-md text-sm leading-6 text-muted-foreground">
             Fly Logistics connects freight, fleets, warehouses, AI assistants, and global visibility into one operating layer.
           </p>
+          <a
+            href={getWhatsAppUrl(whatsappMessages.generalSupport())}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-5 inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary transition hover:bg-primary/15"
+          >
+            <MessageCircle className="size-4" />
+            Chat on WhatsApp
+          </a>
         </div>
         <div className="grid gap-8 sm:grid-cols-3">
           {columns.map((column) => (

@@ -6,7 +6,7 @@ import { SiteHeader } from "@/components/brand/site-header";
 import { QuoteRequestForm } from "@/components/shipments/quote-request-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getWhatsAppUrl } from "@/lib/contact";
+import { getWhatsAppUrl, whatsappMessages } from "@/lib/contact";
 
 export const metadata: Metadata = {
   title: "Book a Shipment",
@@ -47,8 +47,8 @@ export default function QuotePage() {
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="outline">
-                  <a href={getWhatsAppUrl()} target="_blank" rel="noreferrer">
-                    WhatsApp urgent <MessageCircle />
+                  <a href={getWhatsAppUrl(whatsappMessages.quoteRequest({ urgency: "critical" }))} target="_blank" rel="noreferrer">
+                    Chat on WhatsApp <MessageCircle />
                   </a>
                 </Button>
               </div>

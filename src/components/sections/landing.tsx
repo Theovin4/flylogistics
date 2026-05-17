@@ -5,7 +5,7 @@ import { HeroVisual } from "@/components/sections/hero-visual";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getWhatsAppUrl } from "@/lib/contact";
+import { getWhatsAppUrl, whatsappMessages } from "@/lib/contact";
 
 const capabilities = [
   { icon: Bot, title: "AI Logistics Assistant", text: "Shipment help, exception summaries, route recommendations, and operations intelligence." },
@@ -49,8 +49,8 @@ export function Landing() {
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline">
-                <a href={getWhatsAppUrl()} target="_blank" rel="noreferrer">
-                  WhatsApp urgent <MessageCircle />
+                <a href={getWhatsAppUrl(whatsappMessages.urgentDelivery())} target="_blank" rel="noreferrer">
+                  Chat on WhatsApp <MessageCircle />
                 </a>
               </Button>
             </div>

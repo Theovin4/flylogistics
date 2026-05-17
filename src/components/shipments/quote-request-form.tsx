@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Clock3, Loader2, MessageCircle, PackageCheck, Route, Send, ShieldCheck } from "lucide-react";
-import { getWhatsAppUrl } from "@/lib/contact";
+import { getWhatsAppUrl, whatsappMessages } from "@/lib/contact";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,10 +52,13 @@ export function QuoteRequestForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
+  const [submittedForm, setSubmittedForm] = useState(initialState);
 
   function updateField(field: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
   }
+
+  const quoteWhatsAppMessage = whatsappMessages.quoteRequest(form);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,6 +75,7 @@ export function QuoteRequestForm() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to submit quote request.");
       setQuote(data);
+      setSubmittedForm(form);
       setForm(initialState);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to submit quote request.");
@@ -182,9 +186,9 @@ export function QuoteRequestForm() {
               Request booking
             </Button>
             <Button asChild type="button" size="lg" variant="outline" className="sm:flex-1">
-              <a href={getWhatsAppUrl()} target="_blank" rel="noreferrer">
+              <a href={getWhatsAppUrl(quoteWhatsAppMessage)} target="_blank" rel="noreferrer">
                 <MessageCircle />
-                Urgent WhatsApp
+                Chat on WhatsApp
               </a>
             </Button>
           </div>
@@ -211,6 +215,22 @@ export function QuoteRequestForm() {
                   <Clock3 />
                   Track shipment
                 </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <a
+                  href={getWhatsAppUrl(whatsappMessages.quoteReceived({
+                    request_id: quote.request_id,
+                    pickupAddress: submittedForm.pickupAddress,
+                    deliveryAddress: submittedForm.deliveryAddress,
+                    packageType: submittedForm.packageType,
+                    estimated_eta_hours: quote.estimated_eta_hours
+                  }))}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <MessageCircle />
+                  WhatsApp reference
+                </a>
               </Button>
             </div>
             {quote.warning && <p className="mt-2 text-xs text-primary">{quote.warning}</p>}

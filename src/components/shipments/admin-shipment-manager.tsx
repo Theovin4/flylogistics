@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2, Clock3, DollarSign, FileText, Loader2, MapPin, PackagePlus, RefreshCw, Truck } from "lucide-react";
+import { ArrowRight, BellRing, CheckCircle2, Clock3, DollarSign, FileText, Loader2, MapPin, MessageCircle, PackagePlus, RefreshCw, Send, Truck } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { shipmentStatuses, type DriverSummary, type QuoteRequestRecord, type ShipmentRecord, type ShipmentStatus } from "@/lib/shipments";
+import { buildWhatsAppUrl, whatsappMessages } from "@/lib/contact";
 import type { UploadedAsset } from "@/lib/cloudinary";
 import { CloudinaryUpload } from "@/components/cloudinary/cloudinary-upload";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,10 @@ const moneyFormatter = new Intl.NumberFormat("en-NG", {
   maximumFractionDigits: 0,
   style: "currency"
 });
+
+function customerWhatsAppUrl(phone: string | null | undefined, message: string) {
+  return buildWhatsAppUrl({ phone, message });
+}
 
 export function AdminShipmentManager() {
   const [shipments, setShipments] = useState<ShipmentRecord[]>([]);
@@ -378,6 +383,23 @@ export function AdminShipmentManager() {
                       {convertingRequestId === quote.request_id ? <Loader2 className="animate-spin" /> : <ArrowRight />}
                       {converted ? "Converted" : "Convert"}
                     </Button>
+                    {quote.customer_phone ? (
+                      <Button asChild type="button" variant="outline" className="sm:col-span-2">
+                        <a
+                          href={customerWhatsAppUrl(quote.customer_phone, whatsappMessages.quoteReceived(quote))}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <MessageCircle />
+                          Chat on WhatsApp
+                        </a>
+                      </Button>
+                    ) : (
+                      <Button type="button" variant="outline" className="sm:col-span-2" disabled>
+                        <MessageCircle />
+                        No WhatsApp phone
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -443,6 +465,34 @@ export function AdminShipmentManager() {
                     onUploaded={(asset) => saveProof(shipment.tracking_id, asset)}
                   />
                 </div>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {shipment.customer_phone ? (
+                  <>
+                    <Button asChild type="button" variant="outline">
+                      <a href={customerWhatsAppUrl(shipment.customer_phone, whatsappMessages.notifyCustomer(shipment))} target="_blank" rel="noreferrer">
+                        <BellRing />
+                        Notify customer
+                      </a>
+                    </Button>
+                    <Button asChild type="button" variant="outline">
+                      <a href={customerWhatsAppUrl(shipment.customer_phone, whatsappMessages.sendTrackingId(shipment))} target="_blank" rel="noreferrer">
+                        <Send />
+                        Send tracking ID
+                      </a>
+                    </Button>
+                    <Button asChild type="button" variant="outline">
+                      <a href={customerWhatsAppUrl(shipment.customer_phone, whatsappMessages.deliveryUpdate(shipment))} target="_blank" rel="noreferrer">
+                        <MessageCircle />
+                        Send delivery update
+                      </a>
+                    </Button>
+                  </>
+                ) : (
+                  <div className="rounded-md border bg-background/40 p-3 text-sm text-muted-foreground sm:col-span-3">
+                    Add a customer phone number to enable WhatsApp notifications for this shipment.
+                  </div>
+                )}
               </div>
               <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_360px]">
                 <div className="rounded-md border bg-background/40 p-3">
