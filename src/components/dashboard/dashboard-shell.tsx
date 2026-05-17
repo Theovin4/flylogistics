@@ -17,11 +17,14 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { ThemeToggle } from "@/components/brand/theme-toggle";
+import { AccountControl } from "@/components/auth/account-control";
+import { RoleGate } from "@/components/auth/role-gate";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { AdminShipmentManager } from "@/components/shipments/admin-shipment-manager";
+import type { FlyRole } from "@/lib/roles";
 
 const primaryNav = [
   { label: "Admin", href: "/dashboard/admin" },
@@ -85,8 +88,12 @@ const dashboards = {
 
 export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
   const config = dashboards[role];
+  const allowedRoles: FlyRole[] =
+    role === "admin" ? ["admin"] : role === "dispatcher" ? ["admin", "dispatcher"] : role === "driver" ? ["admin", "driver"] : ["admin", "customer"];
+
   return (
-    <main className="min-h-screen bg-background/70">
+    <RoleGate allowedRoles={allowedRoles}>
+      <main className="min-h-screen bg-background/70">
       <aside className="fixed inset-y-0 left-0 hidden w-76 border-r bg-background/88 p-5 backdrop-blur-xl lg:block">
         <Logo />
         <div className="mt-8 rounded-lg border bg-black p-4 text-white">
@@ -129,6 +136,7 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
           </div>
           <div className="flex items-center gap-3">
             {role === "driver" && <div className="flex items-center gap-2 text-sm"><span>Available</span><Switch defaultChecked /></div>}
+            <AccountControl />
             <ThemeToggle />
           </div>
         </header>
@@ -209,6 +217,7 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
           {role === "admin" && <AdminShipmentManager />}
         </div>
       </section>
-    </main>
+      </main>
+    </RoleGate>
   );
 }

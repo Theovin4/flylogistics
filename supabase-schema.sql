@@ -51,13 +51,31 @@ create table if not exists public.shipments (
   updated_at timestamptz default now()
 );
 
+create table if not exists public.user_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  full_name text,
+  company text,
+  role text not null default 'customer',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 create index if not exists shipments_tracking_id_idx on public.shipments (tracking_id);
 create index if not exists shipments_status_idx on public.shipments (status);
 create index if not exists shipments_driver_id_idx on public.shipments (driver_id);
 create index if not exists quote_requests_status_idx on public.quote_requests (status);
+create index if not exists user_profiles_role_idx on public.user_profiles (role);
 
 alter table public.drivers add column if not exists phone text;
 alter table public.drivers add column if not exists photo_url text;
+
+alter table public.user_profiles add column if not exists email text;
+alter table public.user_profiles add column if not exists full_name text;
+alter table public.user_profiles add column if not exists company text;
+alter table public.user_profiles add column if not exists role text default 'customer';
+alter table public.user_profiles add column if not exists created_at timestamptz default now();
+alter table public.user_profiles add column if not exists updated_at timestamptz default now();
 
 alter table public.quote_requests add column if not exists request_id text;
 alter table public.quote_requests add column if not exists customer_name text;

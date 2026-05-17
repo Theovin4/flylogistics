@@ -1,29 +1,18 @@
 import { NextResponse } from "next/server";
-import { demoShipment, normalizeShipment, type ShipmentRecord } from "@/lib/shipments";
+import { fetchNormalizedShipment } from "@/lib/shipment-data";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export async function GET(_: Request, { params }: { params: Promise<{ trackingId: string }> }) {
   const { trackingId } = await params;
   const supabase = getSupabaseAdmin();
 
-  if (!supabase) return NextResponse.json(normalizeShipment(demoShipment));
+  const { shipment, error } = await fetchNormalizedShipment(supabase, trackingId);
+  if (shipment) return NextResponse.json(shipment);
 
-  const { data, error } = await supabase
-    .from("shipments")
-    .select("*, assigned_driver:drivers!shipments_driver_id_fkey(id,name,status,phone,photo_url,latitude,longitude)")
-    .eq("tracking_id", trackingId.toUpperCase())
-    .maybeSingle();
-
-  if (error) {
-    console.error(error);
-    if (trackingId.toUpperCase() === demoShipment.tracking_id) return NextResponse.json(normalizeShipment(demoShipment));
-    return NextResponse.json({ error: "Unable to load shipment.", details: error.message, code: error.code }, { status: 500 });
+  if (typeof error === "string") {
+    return NextResponse.json({ error }, { status: error.includes("configured") ? 503 : 404 });
   }
 
-  if (!data) {
-    if (trackingId.toUpperCase() === demoShipment.tracking_id) return NextResponse.json(normalizeShipment(demoShipment));
-    return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
-  }
-
-  return NextResponse.json(normalizeShipment(data as ShipmentRecord));
+  console.error(error);
+  return NextResponse.json({ error: "Unable to load shipment.", details: error?.message, code: error?.code }, { status: 500 });
 }

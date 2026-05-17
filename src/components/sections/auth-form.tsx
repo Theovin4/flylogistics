@@ -1,24 +1,123 @@
+"use client";
+
+import { FormEvent, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import { dashboardForRole, normalizeRole, type FlyRole } from "@/lib/roles";
 
-const fields = {
-  login: ["Email", "Password"],
-  register: ["Full name", "Company", "Email", "Password"],
-  forgot: ["Email"],
-  otp: ["One-time passcode"]
+type AuthMode = "login" | "register" | "forgot" | "otp";
+
+const titles = {
+  login: "Welcome back",
+  register: "Create your logistics command center",
+  forgot: "Reset your password",
+  otp: "Verify secure access"
 };
 
-export function AuthForm({ mode }: { mode: keyof typeof fields }) {
-  const titles = {
-    login: "Welcome back",
-    register: "Create your logistics command center",
-    forgot: "Reset your password",
-    otp: "Verify secure access"
-  };
+const initialForm = {
+  fullName: "",
+  company: "",
+  email: "",
+  password: "",
+  role: "customer" as FlyRole,
+  otp: ""
+};
+
+export function AuthForm({ mode }: { mode: AuthMode }) {
+  const router = useRouter();
+  const [form, setForm] = useState(initialForm);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function updateField<Key extends keyof typeof form>(field: Key, value: (typeof form)[Key]) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function loadProfile(accessToken: string) {
+    const response = await fetch("/api/auth/profile", {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? "Unable to load your role.");
+    return normalizeRole(data.role);
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) throw new Error("Supabase Auth is not configured.");
+
+      if (mode === "login") {
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email: form.email,
+          password: form.password
+        });
+        if (signInError) throw signInError;
+        const role = data.session?.access_token ? await loadProfile(data.session.access_token) : "customer";
+        router.push(dashboardForRole(role));
+        router.refresh();
+        return;
+      }
+
+      if (mode === "register") {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: form.email,
+          password: form.password,
+          options: {
+            data: {
+              full_name: form.fullName,
+              company: form.company,
+              role: form.role
+            }
+          }
+        });
+        if (signUpError) throw signUpError;
+        if (data.session?.access_token) {
+          const role = await loadProfile(data.session.access_token);
+          router.push(dashboardForRole(role));
+          router.refresh();
+          return;
+        }
+        setMessage("Account created. Check your email to confirm access, then sign in.");
+        return;
+      }
+
+      if (mode === "forgot") {
+        const redirectTo = `${window.location.origin}/auth/login`;
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(form.email, { redirectTo });
+        if (resetError) throw resetError;
+        setMessage("Password reset instructions sent.");
+        return;
+      }
+
+      const { data, error: otpError } = await supabase.auth.verifyOtp({
+        email: form.email,
+        token: form.otp,
+        type: "email"
+      });
+      if (otpError) throw otpError;
+      const role = data.session?.access_token ? await loadProfile(data.session.access_token) : "customer";
+      router.push(dashboardForRole(role));
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Authentication failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10">
@@ -31,18 +130,80 @@ export function AuthForm({ mode }: { mode: keyof typeof fields }) {
             <CardTitle>{titles[mode]}</CardTitle>
           </CardHeader>
           <CardContent>
-            <form className="grid gap-4">
-              {fields[mode].map((field) => (
-                <div key={field} className="grid gap-2">
-                  <Label htmlFor={field}>{field}</Label>
-                  <Input id={field} type={field.toLowerCase().includes("password") ? "password" : "text"} placeholder={field} />
+            <form className="grid gap-4" onSubmit={handleSubmit}>
+              {mode === "register" && (
+                <>
+                  <div className="grid gap-2">
+                    <Label htmlFor="fullName">Full name</Label>
+                    <Input id="fullName" value={form.fullName} onChange={(event) => updateField("fullName", event.target.value)} required />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="company">Company</Label>
+                    <Input id="company" value={form.company} onChange={(event) => updateField("company", event.target.value)} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="role">Workspace role</Label>
+                    <select
+                      id="role"
+                      value={form.role}
+                      onChange={(event) => updateField("role", normalizeRole(event.target.value))}
+                      className="h-11 rounded-md border bg-background/70 px-3 text-sm"
+                    >
+                      <option value="customer">Customer</option>
+                      <option value="driver">Driver</option>
+                      <option value="dispatcher">Dispatcher</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {(mode === "login" || mode === "register" || mode === "forgot" || mode === "otp") && (
+                <div className="grid gap-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} required />
                 </div>
-              ))}
-              <Button type="submit" className="mt-2">{mode === "register" ? "Create account" : "Continue"}</Button>
+              )}
+
+              {(mode === "login" || mode === "register") && (
+                <div className="grid gap-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input id="password" type="password" value={form.password} onChange={(event) => updateField("password", event.target.value)} required minLength={8} />
+                </div>
+              )}
+
+              {mode === "otp" && (
+                <div className="grid gap-2">
+                  <Label htmlFor="otp">One-time passcode</Label>
+                  <Input id="otp" value={form.otp} onChange={(event) => updateField("otp", event.target.value)} required />
+                </div>
+              )}
+
+              <Button type="submit" className="mt-2" disabled={loading}>
+                {loading ? <Loader2 className="animate-spin" /> : null}
+                {mode === "register" ? "Create account" : "Continue"}
+              </Button>
             </form>
-            <div className="mt-5 text-center text-sm text-muted-foreground">
+
+            {message && (
+              <div className="mt-4 flex gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-500">
+                <CheckCircle2 className="size-4" />
+                {message}
+              </div>
+            )}
+            {error && (
+              <div className="mt-4 flex gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                <AlertTriangle className="size-4" />
+                {error}
+              </div>
+            )}
+
+            <div className="mt-5 flex flex-wrap justify-center gap-3 text-sm text-muted-foreground">
               {mode === "login" ? (
-                <span>No account? <Link className="text-primary" href="/auth/register">Register</Link></span>
+                <>
+                  <span>No account? <Link className="text-primary" href="/auth/register">Register</Link></span>
+                  <Link className="text-primary" href="/auth/forgot-password">Forgot password?</Link>
+                </>
               ) : (
                 <Link className="text-primary" href="/auth/login">Back to login</Link>
               )}

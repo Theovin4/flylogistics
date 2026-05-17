@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getGroq } from "@/lib/groq";
-import { demoShipment, normalizeShipment, type ShipmentRecord } from "@/lib/shipments";
+import { fetchNormalizedShipment } from "@/lib/shipment-data";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 const chatSchema = z.object({
@@ -13,27 +13,9 @@ function findTrackingId(message: string) {
 }
 
 async function getShipmentContext(trackingId: string) {
-  const normalizedTrackingId = trackingId.toUpperCase();
-
-  if (normalizedTrackingId === demoShipment.tracking_id) {
-    return normalizeShipment(demoShipment);
-  }
-
-  const supabase = getSupabaseAdmin();
-  if (!supabase) return null;
-
-  const { data, error } = await supabase
-    .from("shipments")
-    .select("*, assigned_driver:drivers!shipments_driver_id_fkey(id,name,status,phone,photo_url,latitude,longitude)")
-    .eq("tracking_id", normalizedTrackingId)
-    .maybeSingle();
-
-  if (error || !data) {
-    if (error) console.error(error);
-    return null;
-  }
-
-  return normalizeShipment(data as ShipmentRecord);
+  const { shipment, error } = await fetchNormalizedShipment(getSupabaseAdmin(), trackingId);
+  if (error && typeof error !== "string") console.error(error);
+  return shipment;
 }
 
 function fallbackReply(trackingId: string | null, shipmentContext: Awaited<ReturnType<typeof getShipmentContext>>) {

@@ -28,7 +28,7 @@ type TrackingResult = {
     photoUrl?: string | null;
   } | null;
   vehicle: { id: string; lat: number; lng: number; speedKph: number };
-  events: { label: string; location?: string; completed: boolean }[];
+  events: { label: string; location?: string; completed: boolean; occurred_at?: string }[];
 };
 
 export function TrackingLookup() {
@@ -163,10 +163,13 @@ export function TrackingLookup() {
           {result && (
             <div className="grid gap-3">
               {result.events.map((item) => (
-                <div key={`${item.label}-${item.location}`} className="flex items-center justify-between rounded-md border p-3 text-sm">
-                  <span className="flex items-center gap-2">
+                <div key={`${item.label}-${item.location}-${item.occurred_at}`} className="flex flex-col gap-2 rounded-md border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <span className="flex min-w-0 items-start gap-2">
                     <PackageCheck className="size-4 text-primary" />
-                    {item.label}{item.location ? ` - ${item.location}` : ""}
+                    <span>
+                      <span className="block font-medium">{item.label}</span>
+                      <span className="text-xs text-muted-foreground">{item.location ?? "Fly Logistics network"}{item.occurred_at ? ` · ${new Date(item.occurred_at).toLocaleString()}` : ""}</span>
+                    </span>
                   </span>
                   <Badge className={item.completed ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500" : "border-primary/40 bg-primary/10 text-primary"}>
                     {item.completed ? "Complete" : "Pending"}

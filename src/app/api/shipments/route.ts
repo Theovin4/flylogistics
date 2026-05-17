@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { makeTrackingId, shipmentStatuses, type ShipmentRecord } from "@/lib/shipments";
+import { makeTimelineEvent, shipmentWithDriverSelect, statusTimelineEvent } from "@/lib/shipment-data";
+import { requireRole } from "@/lib/request-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 const shipmentSchema = z.object({
@@ -20,13 +22,17 @@ const shipmentSchema = z.object({
   eta: z.string().trim().optional()
 });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const access = await requireRole(request, ["admin", "dispatcher"]);
+  if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
+  if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
+
   const supabase = getSupabaseAdmin();
   if (!supabase) return NextResponse.json([]);
 
   const { data, error } = await supabase
     .from("shipments")
-    .select("*, assigned_driver:drivers!shipments_driver_id_fkey(id,name,status,phone,photo_url,latitude,longitude)")
+    .select(shipmentWithDriverSelect)
     .order("created_at", { ascending: false })
     .limit(25);
 
@@ -39,6 +45,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const access = await requireRole(request, ["admin", "dispatcher"]);
+  if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
+  if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
+
   const parsed = shipmentSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Please complete the shipment form." }, { status: 400 });
@@ -50,6 +60,11 @@ export async function POST(request: Request) {
   }
 
   const trackingId = parsed.data.trackingId?.toUpperCase() || makeTrackingId();
+  const timeline = [
+    makeTimelineEvent("Shipment created", parsed.data.pickupAddress),
+    ...(parsed.data.driverId ? [makeTimelineEvent("Driver assigned", parsed.data.pickupAddress)] : []),
+    ...(parsed.data.status !== "BOOKED" ? [statusTimelineEvent(parsed.data.status, parsed.data.deliveryAddress)] : [])
+  ];
   const payload = {
     tracking_id: trackingId,
     customer_name: parsed.data.customerName,
@@ -65,13 +80,10 @@ export async function POST(request: Request) {
     current_lat: parsed.data.currentLat ?? null,
     current_lng: parsed.data.currentLng ?? null,
     eta: parsed.data.eta ?? null,
-    timeline: [
-      { label: "Shipment created", location: parsed.data.pickupAddress, completed: true },
-      { label: parsed.data.status.replaceAll("_", " "), location: parsed.data.deliveryAddress, completed: parsed.data.status === "DELIVERED" }
-    ]
+    timeline
   };
 
-  const { data, error } = await supabase.from("shipments").insert(payload).select("*").single();
+  const { data, error } = await supabase.from("shipments").insert(payload).select(shipmentWithDriverSelect).single();
   if (error) {
     console.error(error);
     return NextResponse.json({ error: "Unable to create shipment.", details: error.message, code: error.code }, { status: 500 });
