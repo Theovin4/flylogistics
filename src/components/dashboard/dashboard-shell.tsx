@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
+import { DriverLocationPanel } from "@/components/drivers/driver-location-panel";
 import { AdminShipmentManager } from "@/components/shipments/admin-shipment-manager";
 import type { FlyRole } from "@/lib/roles";
 
@@ -88,7 +89,7 @@ const dashboards = {
 
 export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
   const config = dashboards[role];
-  const allowedRoles: FlyRole[] = ["admin"];
+  const allowedRoles: FlyRole[] = [role];
 
   return (
     <RoleGate allowedRoles={allowedRoles}>
@@ -213,6 +214,7 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
               </Card>
             ))}
           </div>
+          {(role === "driver" || role === "dispatcher") && <DriverLocationPanel />}
           {role === "admin" && <AdminShipmentManager />}
         </div>
       </section>

@@ -1,10 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cleanEnv } from "@/lib/env";
+import { canAccessRole, normalizeRole, type FlyRole } from "@/lib/roles";
 
-async function isAdminSession(accessToken: string) {
+function dashboardRoles(pathname: string): FlyRole[] {
+  if (pathname.startsWith("/dashboard/admin")) return ["admin"];
+  if (pathname.startsWith("/dashboard/dispatcher")) return ["dispatcher"];
+  if (pathname.startsWith("/dashboard/driver")) return ["driver"];
+  if (pathname.startsWith("/dashboard/customer")) return ["customer"];
+  return ["admin", "dispatcher", "driver", "customer"];
+}
+
+async function sessionRole(accessToken: string) {
   const supabaseUrl = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const supabaseAnonKey = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  if (!supabaseUrl || !supabaseAnonKey) return false;
+  if (!supabaseUrl || !supabaseAnonKey) return null;
 
   try {
     const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
@@ -15,12 +24,12 @@ async function isAdminSession(accessToken: string) {
       cache: "no-store"
     });
 
-    if (!response.ok) return false;
+    if (!response.ok) return null;
     const user = await response.json();
-    return String(user.user_metadata?.role ?? "customer").toLowerCase() === "admin";
+    return normalizeRole(user.user_metadata?.role);
   } catch (error) {
     console.error(error);
-    return false;
+    return null;
   }
 }
 
@@ -37,8 +46,8 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    const isAdmin = await isAdminSession(session);
-    if (!isAdmin) {
+    const role = await sessionRole(session);
+    if (!role || !canAccessRole(role, dashboardRoles(pathname))) {
       const response = NextResponse.redirect(loginUrl);
       response.cookies.set("fly_session", "", {
         httpOnly: true,

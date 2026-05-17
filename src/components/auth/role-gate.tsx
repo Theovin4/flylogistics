@@ -109,7 +109,7 @@ export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; 
           </CardHeader>
           <CardContent className="grid gap-4 text-sm text-muted-foreground">
             <p>
-              Your account is signed in as {profile.role}. Fly Logistics dashboard access is limited to admin operators.
+              Your account is signed in as {profile.role}. This workspace requires one of these roles: {allowedRoles.join(", ")}.
             </p>
             <Button asChild variant="outline">
               <Link href="/">Return to public site</Link>

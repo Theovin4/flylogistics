@@ -33,6 +33,30 @@ type FlyPublicDatabase = {
         };
         Relationships: [];
       };
+      shipments: {
+        Row: {
+          id: number;
+          tracking_id: string;
+          status: string;
+          driver_id: number | null;
+          pickup_address: string;
+          delivery_address: string;
+          package_type: string;
+          current_lat: number | null;
+          current_lng: number | null;
+          eta: string | null;
+          updated_at?: string | null;
+        };
+        Insert: never;
+        Update: {
+          current_lat?: number | null;
+          current_lng?: number | null;
+          status?: string | null;
+          driver_id?: number | null;
+          updated_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

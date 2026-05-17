@@ -113,3 +113,22 @@ alter table public.shipments add column if not exists proof_image_url text;
 alter table public.shipments add column if not exists timeline jsonb default '[]'::jsonb;
 alter table public.shipments add column if not exists created_at timestamptz default now();
 alter table public.shipments add column if not exists updated_at timestamptz default now();
+
+alter table public.drivers replica identity full;
+alter table public.shipments replica identity full;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.drivers;
+exception
+  when duplicate_object then null;
+  when undefined_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.shipments;
+exception
+  when duplicate_object then null;
+  when undefined_object then null;
+end $$;

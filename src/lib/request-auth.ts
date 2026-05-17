@@ -8,6 +8,7 @@ export type AuthProfile = {
   full_name: string | null;
   company: string | null;
   role: FlyRole;
+  driver_id?: number | string | null;
 };
 
 function bearerToken(request: Request) {
@@ -17,12 +18,14 @@ function bearerToken(request: Request) {
 }
 
 function profileFromUser(user: User): AuthProfile {
+  const driverId = user.user_metadata?.driver_id;
   return {
     id: user.id,
     email: user.email ?? null,
     full_name: typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null,
     company: typeof user.user_metadata?.company === "string" ? user.user_metadata.company : null,
-    role: normalizeRole(user.user_metadata?.role)
+    role: normalizeRole(user.user_metadata?.role),
+    driver_id: typeof driverId === "string" || typeof driverId === "number" ? driverId : null
   };
 }
 
@@ -48,7 +51,8 @@ export async function getRequestProfile(request: Request) {
     return {
       profile: {
         ...existing.data,
-        role: normalizeRole(existing.data.role)
+        role: normalizeRole(existing.data.role),
+        driver_id: fallbackProfile.driver_id
       } as AuthProfile,
       status: 200,
       error: null
@@ -79,7 +83,8 @@ export async function getRequestProfile(request: Request) {
   return {
     profile: {
       ...data,
-      role: normalizeRole(data.role)
+      role: normalizeRole(data.role),
+      driver_id: fallbackProfile.driver_id
     } as AuthProfile,
     status: 200,
     error: null

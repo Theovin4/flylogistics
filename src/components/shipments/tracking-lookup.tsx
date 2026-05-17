@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -18,6 +18,7 @@ import {
   Truck
 } from "lucide-react";
 import { getWhatsAppUrl } from "@/lib/contact";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,12 +71,12 @@ export function TrackingLookup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function lookupShipment(id: string) {
+  const lookupShipment = useCallback(async (id: string, options?: { silent?: boolean }) => {
     const normalizedId = id.trim().toUpperCase();
     if (!normalizedId) return;
 
     setTrackingId(normalizedId);
-    setLoading(true);
+    if (!options?.silent) setLoading(true);
     setError(null);
 
     try {
@@ -85,16 +86,50 @@ export function TrackingLookup() {
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Tracking lookup failed.");
-      setResult(null);
+      if (!options?.silent) setResult(null);
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
-  }
+  }, []);
 
   async function trackShipment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await lookupShipment(trackingId);
   }
+
+  useEffect(() => {
+    if (!result?.trackingId) return;
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+
+    const channel = supabase
+      .channel(`tracking-live-${result.trackingId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "shipments", filter: `tracking_id=eq.${result.trackingId}` }, () => {
+        void lookupShipment(result.trackingId, { silent: true });
+      });
+
+    if (result.assignedDriver?.id) {
+      channel.on("postgres_changes", { event: "*", schema: "public", table: "drivers", filter: `id=eq.${result.assignedDriver.id}` }, () => {
+        void lookupShipment(result.trackingId, { silent: true });
+      });
+    }
+
+    channel.subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [lookupShipment, result?.assignedDriver?.id, result?.trackingId]);
+
+  const truckPosition = useMemo(() => {
+    if (!result) return { left: "58%", top: "43%" };
+    const latOffset = Math.abs(result.vehicle.lat * 13) % 46;
+    const lngOffset = Math.abs(result.vehicle.lng * 17) % 48;
+    return {
+      left: `${24 + lngOffset}%`,
+      top: `${22 + latOffset}%`
+    };
+  }, [result]);
 
   const visibleStatus = result ? formatStatus(result.status) : "Awaiting lookup";
 
@@ -167,7 +202,7 @@ export function TrackingLookup() {
         <div className="relative h-72 bg-black sm:h-80">
           <div className="absolute inset-0 grid-field opacity-60" />
           <div className="orange-line absolute left-8 right-8 top-1/2 h-px" />
-          <Truck className="absolute left-[58%] top-[43%] size-10 text-primary" />
+          <Truck className="absolute size-10 text-primary transition-all duration-700 ease-out" style={truckPosition} />
           <MapPin className="absolute left-[18%] top-[56%] size-8 text-white" />
           <Navigation className="absolute right-[18%] top-[30%] size-8 text-white" />
           <div className="absolute bottom-4 left-4 right-4 rounded-md border border-white/15 bg-black/70 px-4 py-3 text-xs text-white backdrop-blur">
@@ -186,7 +221,10 @@ export function TrackingLookup() {
                 {result ? `${result.pickupAddress} to ${result.deliveryAddress}` : "Customer tracking is connected to real Supabase shipment records."}
               </p>
             </div>
-            <Badge className="w-fit border-primary/40 bg-primary/10 text-primary">{visibleStatus}</Badge>
+            <div className="flex flex-wrap gap-2">
+              <Badge className="w-fit border-primary/40 bg-primary/10 text-primary">{visibleStatus}</Badge>
+              {result && <Badge className="w-fit border-emerald-500/40 bg-emerald-500/10 text-emerald-500">Live updates on</Badge>}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="grid gap-5">
