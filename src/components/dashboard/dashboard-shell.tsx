@@ -88,8 +88,7 @@ const dashboards = {
 
 export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
   const config = dashboards[role];
-  const allowedRoles: FlyRole[] =
-    role === "admin" ? ["admin"] : role === "dispatcher" ? ["admin", "dispatcher"] : role === "driver" ? ["admin", "driver"] : ["admin", "customer"];
+  const allowedRoles: FlyRole[] = ["admin"];
 
   return (
     <RoleGate allowedRoles={allowedRoles}>

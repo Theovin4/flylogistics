@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import type { Route as NextRoute } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
@@ -10,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { dashboardForRole, normalizeRole, type FlyRole } from "@/lib/roles";
+import { normalizeRole, type FlyRole } from "@/lib/roles";
 
 type AuthMode = "login" | "register" | "forgot" | "otp";
 
@@ -50,6 +51,39 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
     return normalizeRole(data.role);
   }
 
+  async function syncServerSession(accessToken: string, expiresIn?: number) {
+    const response = await fetch("/api/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken, expiresIn })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? "Unable to create secure session.");
+  }
+
+  async function clearServerSession() {
+    await fetch("/api/auth/session", { method: "DELETE" });
+  }
+
+  function adminRedirectTarget() {
+    const next = new URLSearchParams(window.location.search).get("next");
+    return next?.startsWith("/dashboard") ? next : "/dashboard/admin";
+  }
+
+  async function finishAdminSignIn(accessToken: string, expiresIn?: number) {
+    const role = await loadProfile(accessToken);
+    if (role !== "admin") {
+      const supabase = getSupabaseBrowser();
+      await supabase?.auth.signOut();
+      await clearServerSession();
+      throw new Error("Admin access is required for Fly Logistics dashboards.");
+    }
+
+    await syncServerSession(accessToken, expiresIn);
+    router.push(adminRedirectTarget() as NextRoute);
+    router.refresh();
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -66,9 +100,8 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
           password: form.password
         });
         if (signInError) throw signInError;
-        const role = data.session?.access_token ? await loadProfile(data.session.access_token) : "customer";
-        router.push(dashboardForRole(role));
-        router.refresh();
+        if (!data.session?.access_token) throw new Error("No Supabase session was returned.");
+        await finishAdminSignIn(data.session.access_token, data.session.expires_in);
         return;
       }
 
@@ -86,9 +119,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         });
         if (signUpError) throw signUpError;
         if (data.session?.access_token) {
-          const role = await loadProfile(data.session.access_token);
-          router.push(dashboardForRole(role));
-          router.refresh();
+          await finishAdminSignIn(data.session.access_token, data.session.expires_in);
           return;
         }
         setMessage("Account created. Check your email to confirm access, then sign in.");
@@ -96,7 +127,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
       }
 
       if (mode === "forgot") {
-        const redirectTo = `${window.location.origin}/auth/login`;
+        const redirectTo = `${window.location.origin}/login`;
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(form.email, { redirectTo });
         if (resetError) throw resetError;
         setMessage("Password reset instructions sent.");
@@ -109,9 +140,8 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         type: "email"
       });
       if (otpError) throw otpError;
-      const role = data.session?.access_token ? await loadProfile(data.session.access_token) : "customer";
-      router.push(dashboardForRole(role));
-      router.refresh();
+      if (!data.session?.access_token) throw new Error("No Supabase session was returned.");
+      await finishAdminSignIn(data.session.access_token, data.session.expires_in);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed.");
     } finally {
@@ -205,7 +235,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
                   <Link className="text-primary" href="/auth/forgot-password">Forgot password?</Link>
                 </>
               ) : (
-                <Link className="text-primary" href="/auth/login">Back to login</Link>
+                <Link className="text-primary" href={"/login" as NextRoute}>Back to login</Link>
               )}
             </div>
           </CardContent>

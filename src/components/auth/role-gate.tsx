@@ -1,10 +1,12 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
+import type { Route as NextRoute } from "next";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { ShieldCheck, Loader2 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { canAccessRole, dashboardForRole, normalizeRole, type FlyRole } from "@/lib/roles";
+import { canAccessRole, normalizeRole, type FlyRole } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -15,6 +17,9 @@ type Profile = {
 };
 
 export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; children: ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const loginHref = `/login?next=${encodeURIComponent(pathname)}` as NextRoute;
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +40,7 @@ export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; 
       if (!token) {
         setError("Please sign in to continue.");
         setLoading(false);
+        router.replace(loginHref);
         return;
       }
 
@@ -58,7 +64,7 @@ export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [loginHref, router]);
 
   if (loading) {
     return (
@@ -86,7 +92,7 @@ export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; 
           <CardContent className="grid gap-4 text-sm text-muted-foreground">
             <p>{error ?? "Please sign in to continue."}</p>
             <Button asChild>
-              <Link href="/auth/login">Sign in</Link>
+              <Link href={loginHref}>Sign in</Link>
             </Button>
           </CardContent>
         </Card>
@@ -103,10 +109,10 @@ export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; 
           </CardHeader>
           <CardContent className="grid gap-4 text-sm text-muted-foreground">
             <p>
-              Your account is signed in as {profile.role}. This workspace is limited to {allowedRoles.join(" or ")} operators.
+              Your account is signed in as {profile.role}. Fly Logistics dashboard access is limited to admin operators.
             </p>
             <Button asChild variant="outline">
-              <Link href={dashboardForRole(profile.role)}>Open your dashboard</Link>
+              <Link href="/">Return to public site</Link>
             </Button>
           </CardContent>
         </Card>

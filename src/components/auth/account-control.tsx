@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { Route as NextRoute } from "next";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -19,7 +20,8 @@ export function AccountControl() {
   async function signOut() {
     const supabase = getSupabaseBrowser();
     await supabase?.auth.signOut();
-    router.push("/auth/login");
+    await fetch("/api/auth/session", { method: "DELETE" });
+    router.push("/login" as NextRoute);
     router.refresh();
   }
 
