@@ -3,7 +3,7 @@ import type { Route } from "next";
 import { Logo } from "@/components/brand/logo";
 
 const columns = [
-  { title: "Platform", links: ["Tracking", "Instant Quote", "AI Logistics", "Fleet Management"] },
+  { title: "Platform", links: ["Tracking", "Quote", "AI Logistics", "Fleet Management"] },
   { title: "Company", links: ["About", "Careers", "Blog", "Contact"] },
   { title: "Enterprise", links: ["Enterprise Logistics", "Warehousing", "Pricing", "Services"] }
 ];
@@ -38,7 +38,7 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="mx-auto flex max-w-7xl flex-col gap-2 border-t border-border/70 px-4 py-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-        <span>© 2026 Fly Logistics, Inc. All rights reserved.</span>
+        <span>Copyright 2026 Fly Logistics, Inc. All rights reserved.</span>
         <span>ISO-ready architecture. Vercel deployment. Cloudinary media pipeline.</span>
       </div>
     </footer>

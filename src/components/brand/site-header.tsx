@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { ArrowRight, Menu, X } from "lucide-react";
+import { ArrowRight, Clock3, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { Logo } from "@/components/brand/logo";
 import { ThemeToggle } from "@/components/brand/theme-toggle";
@@ -33,9 +33,14 @@ export function SiteHeader() {
             <Button asChild variant="ghost" className="hidden sm:inline-flex">
               <Link href="/auth/login">Login</Link>
             </Button>
+            <Button asChild variant="outline" className="hidden md:inline-flex">
+              <Link href="/tracking">
+                Track <Clock3 />
+              </Link>
+            </Button>
             <Button asChild className="hidden sm:inline-flex">
-              <Link href="/instant-quote">
-                Instant quote <ArrowRight />
+              <Link href="/quote">
+                Book shipment <ArrowRight />
               </Link>
             </Button>
             <Button variant="outline" size="icon" className="lg:hidden" aria-label="Toggle navigation" onClick={() => setOpen((value) => !value)}>
@@ -57,7 +62,9 @@ export function SiteHeader() {
             ))}
             <div className="grid grid-cols-2 gap-2 pt-2">
               <Button asChild variant="outline"><Link href="/auth/login">Login</Link></Button>
-              <Button asChild><Link href="/instant-quote">Quote</Link></Button>
+              <Button asChild><Link href="/quote">Quote</Link></Button>
+              <Button asChild variant="outline"><Link href="/tracking">Tracking</Link></Button>
+              <Button asChild variant="outline"><Link href="/dashboard/admin">Admin</Link></Button>
             </div>
           </nav>
         )}

@@ -3,11 +3,11 @@ export const siteConfig = {
   url: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
   description: "AI-powered global logistics operating system.",
   nav: [
-    { label: "Dashboard", href: "/dashboard/admin" },
+    { label: "Services", href: "/services" },
+    { label: "Quote", href: "/quote" },
+    { label: "Tracking", href: "/tracking" },
     { label: "Live Map", href: "/map" },
     { label: "AI Chat", href: "/chat" },
-    { label: "Services", href: "/services" },
-    { label: "Tracking", href: "/tracking" },
     { label: "Pricing", href: "/pricing" }
   ]
 };

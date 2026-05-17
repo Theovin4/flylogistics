@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ArrowRight, Bot, Boxes, BrainCircuit, ChartSpline, Globe2, MapPinned, Radar, ShieldCheck, Truck } from "lucide-react";
+import { ArrowRight, Bot, Boxes, BrainCircuit, ChartSpline, Clock3, Globe2, MapPinned, MessageCircle, Radar, ShieldCheck, Truck } from "lucide-react";
 import { AnimatedShell } from "@/components/sections/animated-shell";
 import { HeroVisual } from "@/components/sections/hero-visual";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getWhatsAppUrl } from "@/lib/contact";
 
 const capabilities = [
   { icon: Bot, title: "AI Logistics Assistant", text: "Shipment help, exception summaries, route recommendations, and operations intelligence." },
@@ -38,12 +39,19 @@ export function Landing() {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Button asChild size="lg">
-                <Link href="/instant-quote">
-                  Calculate quote <ArrowRight />
+                <Link href="/quote">
+                  Book shipment <ArrowRight />
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline">
-                <Link href="/dashboard/admin">View command center</Link>
+                <Link href="/tracking">
+                  Track shipment <Clock3 />
+                </Link>
+              </Button>
+              <Button asChild size="lg" variant="outline">
+                <a href={getWhatsAppUrl()} target="_blank" rel="noreferrer">
+                  WhatsApp urgent <MessageCircle />
+                </a>
               </Button>
             </div>
             <div className="mt-10 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
