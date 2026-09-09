@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { etaFromDistance, formatCurrency } from "@/lib/utils";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { calculateLogisticsPrice } from "@/server/pricing";
 
 const quoteSchema = z.object({
   origin: z.string().min(2),
@@ -15,14 +16,24 @@ const quoteSchema = z.object({
 export async function createQuote(input: unknown) {
   const data = quoteSchema.parse(input);
   const distanceKm = Math.max(120, Math.round((data.origin.length + data.destination.length) * 83));
-  const urgencyMultiplier = data.urgency === "critical" ? 2.2 : data.urgency === "priority" ? 1.45 : 1;
-  const amount = Math.round((distanceKm * 1.22 + data.weightKg * 0.72 + data.cargoValue * 0.003) * urgencyMultiplier);
+  const quote = await calculateLogisticsPrice({
+    pickupAddress: data.origin,
+    deliveryAddress: data.destination,
+    packageType: "Standard package",
+    weightKg: data.weightKg,
+    urgency: data.urgency,
+    deliveryCategory: "standard_package"
+  }, getSupabaseAdmin());
+
   revalidatePath("/instant-quote");
   return {
-    amount,
-    formattedAmount: formatCurrency(amount),
+    amount: quote.amount,
+    formattedAmount: quote.formattedAmount,
     distanceKm,
-    etaHours: etaFromDistance(distanceKm, data.urgency),
+    etaHours: quote.etaHours,
+    deliveryType: quote.deliveryType,
+    vehicleType: quote.vehicleType,
+    warnings: quote.warnings,
     confidence: data.urgency === "critical" ? 94 : 97
   };
 }

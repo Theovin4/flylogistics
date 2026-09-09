@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -9,33 +8,25 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CloudinaryUpload } from "@/components/cloudinary/cloudinary-upload";
-import type { UploadedAsset } from "@/lib/cloudinary";
+import { missingDriverColumn, transportationMarkerKind, transportationTypeLabel } from "@/lib/driver-data";
 
 type Driver = {
   id: number;
-  name: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
+  current_latitude?: number | null;
+  current_longitude?: number | null;
+  is_online?: boolean | null;
+  last_location_at?: string | null;
   status: string | null;
-  phone?: string | null;
-  photo_url?: string | null;
+  approval_status?: string | null;
+  vehicle_type?: string | null;
 };
 
-type ActiveShipment = {
-  id: number;
-  tracking_id: string;
-  status: string;
-  driver_id: number | null;
-  pickup_address: string;
-  delivery_address: string;
-  package_type: string;
-  current_lat: number | null;
-  current_lng: number | null;
-  eta?: string | null;
-};
+const driverExtendedSelect =
+  "id,status,latitude,longitude,current_latitude,current_longitude,is_online,last_location_at,vehicle_type,approval_status";
 
-const activeShipmentStatuses = new Set(["BOOKED", "ASSIGNED", "PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY"]);
+const driverBaseSelect = "id,status,latitude,longitude";
 
 function normalizeStatus(status?: string | null) {
   return status?.trim().toLowerCase() || "unknown";
@@ -46,8 +37,32 @@ function isDriverOnline(status?: string | null) {
   return !normalized.includes("offline") && !normalized.includes("inactive");
 }
 
-function isActiveShipment(shipment: ActiveShipment) {
-  return Boolean(shipment.driver_id) && activeShipmentStatuses.has(String(shipment.status).toUpperCase());
+function isVisibleOnlineDriver(driver: Driver) {
+  const statusOnline = isDriverOnline(driver.status);
+  if (!statusOnline) return false;
+  return Boolean(driver.is_online || statusOnline);
+}
+
+function driverCoordinates(driver: Driver) {
+  const lat = driver.current_latitude ?? driver.latitude;
+  const lng = driver.current_longitude ?? driver.longitude;
+  return typeof lat === "number" && Number.isFinite(lat) && typeof lng === "number" && Number.isFinite(lng)
+    ? { lat, lng }
+    : null;
+}
+
+function normalizeDriverForMap(driver: Driver): Driver {
+  const currentLatitude = driver.current_latitude ?? driver.latitude ?? null;
+  const currentLongitude = driver.current_longitude ?? driver.longitude ?? null;
+  const status = driver.status ?? "offline";
+  return {
+    ...driver,
+    status,
+    vehicle_type: driver.vehicle_type ?? "bike",
+    is_online: isDriverOnline(status) || driver.is_online === true,
+    latitude: currentLatitude,
+    longitude: currentLongitude
+  };
 }
 
 function DriverStatusBadge({ status }: { status?: string | null }) {
@@ -64,10 +79,37 @@ function DriverStatusBadge({ status }: { status?: string | null }) {
   return <Badge className={className}>{status?.replaceAll("_", " ") || "Unknown"}</Badge>;
 }
 
-function driverIconFor(driver: Driver, shipmentCount: number) {
+function vehicleLabel(driver: Driver) {
+  return transportationTypeLabel(driver.vehicle_type);
+}
+
+function publicFleetLabel(driver: Driver) {
+  return `Fly Rider ${String(driver.id).padStart(3, "0")}`;
+}
+
+function lastLocationLabel(value?: string | null) {
+  if (!value) return "Live location ready";
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return "Live location ready";
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
+  if (minutes < 1) return "Updated just now";
+  if (minutes === 1) return "Updated 1 min ago";
+  if (minutes < 60) return `Updated ${minutes} mins ago`;
+  return "Live position synced";
+}
+
+function vehicleMarkerKind(driver: Driver) {
+  const vehicle = String(driver.vehicle_type ?? "").toLowerCase();
+  if (vehicle.includes("warehouse") || vehicle.includes("hub")) return "hub";
+  return transportationMarkerKind(vehicle);
+}
+
+function driverIconFor(driver: Driver) {
+  const kind = vehicleMarkerKind(driver);
+  const iconHtml = kind === "truck" ? "&#128666;" : kind === "van" ? "&#128656;" : kind === "hub" ? "&#127970;" : "&#128757;";
   return L.divIcon({
-    html: `<span>${shipmentCount > 0 ? shipmentCount : "FL"}</span>`,
-    className: `fly-driver-marker ${isDriverOnline(driver.status) ? "fly-driver-marker-online" : "fly-driver-marker-offline"}`,
+    html: `<span class="fly-driver-marker-icon">${iconHtml}</span>`,
+    className: `fly-driver-marker fly-driver-marker-${kind} ${isVisibleOnlineDriver(driver) ? "fly-driver-marker-online" : "fly-driver-marker-offline"}`,
     iconSize: [40, 40],
     iconAnchor: [20, 20],
     popupAnchor: [0, -20]
@@ -76,141 +118,127 @@ function driverIconFor(driver: Driver, shipmentCount: number) {
 
 export default function MapView() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [shipments, setShipments] = useState<ActiveShipment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [photoSavingDriverId, setPhotoSavingDriverId] = useState<number | null>(null);
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [scopeReady, setScopeReady] = useState(false);
 
-  const shipmentsByDriver = useMemo(() => {
-    const map = new Map<number, ActiveShipment[]>();
-    shipments.forEach((shipment) => {
-      if (!shipment.driver_id) return;
-      const current = map.get(shipment.driver_id) ?? [];
-      map.set(shipment.driver_id, [...current, shipment]);
-    });
-    return map;
-  }, [shipments]);
-
-  const onlineDrivers = drivers.filter((driver) => isDriverOnline(driver.status)).length;
-
-  async function saveDriverPhoto(driverId: number, asset: UploadedAsset) {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) throw new Error("Supabase public environment variables are not configured.");
-    setPhotoSavingDriverId(driverId);
-    const { data, error } = await supabase
-      .from("drivers")
-      .update({ photo_url: asset.secureUrl })
-      .eq("id", driverId)
-      .select("*")
-      .single();
-
-    setPhotoSavingDriverId(null);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    if (data) {
-      setDrivers((current) => current.map((driver) => (driver.id === driverId ? (data as Driver) : driver)));
-    }
-  }
+  const visibleDrivers = useMemo(
+    () => drivers.filter((driver) => isVisibleOnlineDriver(driver) && driverCoordinates(driver)),
+    [drivers]
+  );
+  const missingLocationCount = drivers.filter((driver) => isVisibleOnlineDriver(driver) && !driverCoordinates(driver)).length;
+  const onlineDrivers = visibleDrivers.length;
 
   useEffect(() => {
     let mounted = true;
+    fetch("/api/realtime/scope?public=1")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { companyId?: string | null } | null) => {
+        if (mounted) setCompanyId(data?.companyId ?? null);
+      })
+      .catch(() => {
+        if (mounted) setCompanyId(null);
+      })
+      .finally(() => {
+        if (mounted) setScopeReady(true);
+      });
 
-    async function fetchFleet() {
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!scopeReady) return;
+
+    let mounted = true;
+
+    async function fetchFleet(options?: { silent?: boolean }) {
       const supabase = getSupabaseBrowser();
       if (!supabase) {
-        setError("Supabase public environment variables are not configured.");
+        setError("Live map service is temporarily unavailable.");
         setLoading(false);
         return;
       }
-      setLoading(true);
+      if (!options?.silent) setLoading(true);
       setError(null);
 
-      const [driversResult, shipmentsResult] = await Promise.all([
-        supabase.from("drivers").select("*").order("id", { ascending: true }),
-        supabase
-          .from("shipments")
-          .select("id,tracking_id,status,driver_id,current_lat,current_lng,pickup_address,delivery_address,package_type,eta")
-          .order("updated_at", { ascending: false })
-          .limit(50)
-      ]);
+      let driversQuery = supabase.from("drivers").select(driverExtendedSelect).order("id", { ascending: true }).limit(500);
+      if (companyId) driversQuery = driversQuery.eq("company_id", companyId);
+      const driversResult = await driversQuery;
 
       if (!mounted) return;
 
-      if (driversResult.error) {
-        setError(driversResult.error.message);
+      let driverRows = driversResult.data as Driver[] | null;
+      let driverError = driversResult.error;
+      if (driverError && missingDriverColumn(driverError)) {
+        const fallbackDrivers = await supabase.from("drivers").select(driverBaseSelect).order("id", { ascending: true }).limit(500);
+        driverRows = fallbackDrivers.data as Driver[] | null;
+        driverError = fallbackDrivers.error;
+      }
+
+      if (driverError) {
+        setError(driverError.message);
       } else {
-        setDrivers((driversResult.data as Driver[]).filter((driver) => Number.isFinite(driver.latitude) && Number.isFinite(driver.longitude)));
+        setDrivers(((driverRows ?? []) as Driver[]).map(normalizeDriverForMap));
       }
 
-      if (!shipmentsResult.error) {
-        setShipments(((shipmentsResult.data as ActiveShipment[] | null) ?? []).filter(isActiveShipment));
-      }
-
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
 
     void fetchFleet();
+    const fallbackPolling = window.setInterval(() => {
+      void fetchFleet({ silent: true });
+    }, 20000);
 
     const supabase = getSupabaseBrowser();
     if (!supabase) {
       return () => {
         mounted = false;
+        window.clearInterval(fallbackPolling);
       };
     }
 
+    const driverChangeFilter = companyId
+      ? { event: "*" as const, schema: "public", table: "drivers", filter: `company_id=eq.${companyId}` }
+      : { event: "*" as const, schema: "public", table: "drivers" };
+
     const channel = supabase
       .channel("fleet-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "drivers" }, (payload) => {
+      .on("postgres_changes", driverChangeFilter, (payload) => {
         if (payload.eventType === "DELETE") {
           const oldDriver = payload.old as Pick<Driver, "id">;
           setDrivers((current) => current.filter((driver) => driver.id !== oldDriver.id));
           return;
         }
 
-        const nextDriver = payload.new as Driver;
-        if (!Number.isFinite(nextDriver.latitude) || !Number.isFinite(nextDriver.longitude)) return;
+        const nextDriver = normalizeDriverForMap(payload.new as Driver);
         setDrivers((current) => {
           const exists = current.some((driver) => driver.id === nextDriver.id);
           if (exists) return current.map((driver) => (driver.id === nextDriver.id ? nextDriver : driver));
           return [...current, nextDriver].sort((a, b) => a.id - b.id);
         });
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "shipments" }, (payload) => {
-        if (payload.eventType === "DELETE") {
-          const oldShipment = payload.old as Pick<ActiveShipment, "id">;
-          setShipments((current) => current.filter((shipment) => shipment.id !== oldShipment.id));
-          return;
-        }
-
-        const nextShipment = payload.new as ActiveShipment;
-        setShipments((current) => {
-          if (!isActiveShipment(nextShipment)) return current.filter((shipment) => shipment.id !== nextShipment.id);
-          const exists = current.some((shipment) => shipment.id === nextShipment.id);
-          if (exists) return current.map((shipment) => (shipment.id === nextShipment.id ? nextShipment : shipment));
-          return [nextShipment, ...current];
-        });
-      })
       .subscribe();
 
     return () => {
       mounted = false;
+      window.clearInterval(fallbackPolling);
       void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [companyId, scopeReady]);
 
   return (
-    <section className="grid gap-5 lg:grid-cols-[380px_1fr]">
-      <Card className="glass order-2 lg:order-1">
+    <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
+      <Card className="glass order-2 xl:order-1 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto">
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <CardTitle>Driver network</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">Realtime Supabase fleet and shipment assignment updates</p>
+              <CardTitle>Active rider network</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">Online Fly Logistics riders currently sharing live position.</p>
             </div>
-            <DriverStatusBadge status={`${onlineDrivers}/${drivers.length} online`} />
+            <DriverStatusBadge status={`${onlineDrivers} live`} />
           </div>
         </CardHeader>
         <CardContent className="grid gap-3">
@@ -224,48 +252,38 @@ export default function MapView() {
 
           {error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-              Could not load drivers: {error}
+              Live rider updates are temporarily unavailable. Please refresh shortly.
             </div>
           )}
 
-          {!loading && !error && drivers.length === 0 && (
+          {!loading && !error && visibleDrivers.length === 0 && (
             <div className="rounded-md border p-4 text-sm text-muted-foreground">
-              No drivers found. Add rows to the drivers table with name, latitude, longitude, and status.
+              No online riders with live coordinates are visible yet. Riders appear here once they are online and sharing location.
+              {missingLocationCount > 0 ? ` ${missingLocationCount} online rider${missingLocationCount === 1 ? "" : "s"} still need a location sync.` : ""}
             </div>
           )}
 
-          {drivers.map((driver) => {
-            const assignedShipments = shipmentsByDriver.get(driver.id) ?? [];
+          {visibleDrivers.map((driver) => {
+            const coordinates = driverCoordinates(driver);
+            if (!coordinates) return null;
+            const displayName = publicFleetLabel(driver);
             return (
               <div key={driver.id} className="rounded-md border bg-background/45 p-4 transition hover:border-primary/40">
                 <div className="flex items-start gap-3">
-                  <div className="relative size-12 overflow-hidden rounded-md border bg-black">
-                    {driver.photo_url ? (
-                      <Image src={driver.photo_url} alt={`${driver.name} profile photo`} width={96} height={96} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="grid h-full w-full place-items-center text-sm font-black text-primary">FL</div>
-                    )}
+                  <div className="grid size-12 shrink-0 place-items-center rounded-md border bg-black text-sm font-black text-primary">
+                    FL
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <h3 className="truncate font-semibold">{driver.name}</h3>
-                        <p className="mt-1 font-mono text-xs text-muted-foreground">
-                          {driver.latitude.toFixed(4)}, {driver.longitude.toFixed(4)}
-                        </p>
+                        <h3 className="truncate font-semibold">{displayName}</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">{vehicleLabel(driver)}</p>
                       </div>
                       <DriverStatusBadge status={driver.status} />
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge>{assignedShipments.length} shipments</Badge>
-                      {assignedShipments[0] && <Badge className="border-primary/40 bg-primary/10 text-primary">{assignedShipments[0].tracking_id}</Badge>}
-                    </div>
-                    <div className="mt-3">
-                      <CloudinaryUpload
-                        folder="fly-logistics/drivers"
-                        label={photoSavingDriverId === driver.id ? "Saving photo" : driver.photo_url ? "Change photo" : "Upload photo"}
-                        onUploaded={(asset) => saveDriverPhoto(driver.id, asset)}
-                      />
+                      <Badge className="border-emerald-500/40 bg-emerald-500/10 text-emerald-500">Live position</Badge>
+                      <Badge className="border-muted-foreground/25 bg-background/60 text-muted-foreground">{lastLocationLabel(driver.last_location_at)}</Badge>
                     </div>
                   </div>
                 </div>
@@ -275,34 +293,27 @@ export default function MapView() {
         </CardContent>
       </Card>
 
-      <Card className="glass order-1 overflow-hidden lg:order-2">
-        <div className="relative h-[68vh] min-h-[520px]">
+      <Card className="glass order-1 overflow-hidden xl:order-2">
+        <div className="relative h-[58vh] min-h-[360px] sm:h-[64vh] sm:min-h-[460px] lg:h-[68vh] lg:min-h-[520px]">
           <MapContainer center={[6.5244, 3.3792]} zoom={11} className="h-full w-full">
             <TileLayer
               attribution="&copy; OpenStreetMap contributors"
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
-            {drivers.map((driver) => {
-              const assignedShipments = shipmentsByDriver.get(driver.id) ?? [];
+            {visibleDrivers.map((driver) => {
+              const coordinates = driverCoordinates(driver);
+              if (!coordinates) return null;
+              const displayName = publicFleetLabel(driver);
               return (
-                <Marker key={driver.id} position={[driver.latitude, driver.longitude]} icon={driverIconFor(driver, assignedShipments.length)}>
+                <Marker key={driver.id} position={[coordinates.lat, coordinates.lng]} icon={driverIconFor(driver)}>
                   <Popup>
                     <div className="min-w-52">
-                      {driver.photo_url && (
-                        <Image src={driver.photo_url} alt={`${driver.name} profile photo`} width={240} height={140} className="mb-3 h-24 w-full rounded-md object-cover" />
-                      )}
-                      <strong>{driver.name}</strong>
+                      <strong>{displayName}</strong>
                       <div className="mt-2 text-xs opacity-80">{driver.status?.replaceAll("_", " ") ?? "unknown"}</div>
-                      <div className="mt-3 grid gap-2">
-                        {assignedShipments.length === 0 && <div className="text-xs opacity-70">No assigned live shipment.</div>}
-                        {assignedShipments.slice(0, 3).map((shipment) => (
-                          <div key={shipment.tracking_id} className="rounded-md border border-white/15 p-2 text-xs">
-                            <div className="font-mono font-semibold">{shipment.tracking_id}</div>
-                            <div className="mt-1 opacity-80">{shipment.package_type}</div>
-                            <div className="mt-1 opacity-70">{shipment.status.replaceAll("_", " ")}</div>
-                          </div>
-                        ))}
+                      <div className="mt-3 rounded-md border border-white/15 p-2 text-xs">
+                        <div className="font-semibold">{vehicleLabel(driver)}</div>
+                        <div className="mt-1 opacity-70">{lastLocationLabel(driver.last_location_at)}</div>
                       </div>
                     </div>
                   </Popup>
@@ -310,10 +321,10 @@ export default function MapView() {
               );
             })}
           </MapContainer>
-          <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-white/15 bg-black/70 px-4 py-3 text-white shadow-2xl backdrop-blur">
-            <div className="text-xs uppercase tracking-[0.22em] text-primary">Live Map</div>
-            <div className="mt-1 text-sm font-semibold">Lagos operations grid</div>
-            <div className="mt-2 text-xs text-white/65">{shipments.length} assigned shipments linked to moving drivers</div>
+          <div className="pointer-events-none absolute left-3 right-3 top-3 rounded-md border border-white/15 bg-black/70 px-3 py-2 text-white shadow-2xl backdrop-blur sm:left-4 sm:right-auto sm:px-4 sm:py-3">
+            <div className="text-xs uppercase tracking-[0.22em] text-primary">Live Rider Map</div>
+            <div className="mt-1 text-sm font-semibold">Fly Logistics delivery coverage</div>
+            <div className="mt-2 text-xs text-white/65">{visibleDrivers.length} online rider{visibleDrivers.length === 1 ? "" : "s"} visible</div>
           </div>
         </div>
       </Card>

@@ -1,3 +1,13 @@
-import { handlers } from "@/server/auth";
+import { NextResponse } from "next/server";
 
-export const { GET, POST } = handlers;
+export const dynamic = "force-dynamic";
+
+function legacyAuthDisabled() {
+  return NextResponse.json(
+    { error: "Legacy authentication is disabled. Use the Fly Logistics Supabase Auth flow." },
+    { status: 404 }
+  );
+}
+
+export const GET = legacyAuthDisabled;
+export const POST = legacyAuthDisabled;

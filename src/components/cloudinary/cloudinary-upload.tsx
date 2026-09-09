@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CldUploadWidget, type CloudinaryUploadWidgetResults } from "next-cloudinary";
 import { ImagePlus, Loader2, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,12 @@ type CloudinaryInfo = {
   height?: number;
   format?: string;
   bytes?: number;
+};
+
+type CloudinaryUploadRuntimeConfig = {
+  cloudName?: string;
+  apiKey?: string;
+  error?: string;
 };
 
 function getUploadedAsset(results: CloudinaryUploadWidgetResults): UploadedAsset | null {
@@ -42,8 +48,48 @@ type CloudinaryUploadProps = {
 export function CloudinaryUpload({ folder, label, description, variant = "button", onUploaded }: CloudinaryUploadProps) {
   const [state, setState] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
-  const cloudName = cleanEnv(process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME);
-  const apiKey = cleanEnv(process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY);
+  const [runtimeConfig, setRuntimeConfig] = useState<CloudinaryUploadRuntimeConfig | null>(null);
+  const [configLoading, setConfigLoading] = useState(false);
+  const envCloudName = cleanEnv(process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME);
+  const envApiKey = cleanEnv(process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY);
+  const cloudName = envCloudName ?? runtimeConfig?.cloudName;
+  const apiKey = envApiKey ?? runtimeConfig?.apiKey;
+
+  useEffect(() => {
+    if (envCloudName && envApiKey) return;
+
+    let cancelled = false;
+    setConfigLoading(true);
+    fetch("/api/cloudinary/config", { cache: "no-store" })
+      .then(async (response) => {
+        const data = (await response.json().catch(() => ({}))) as CloudinaryUploadRuntimeConfig;
+        if (!response.ok) throw new Error(data.error ?? "Secure media upload configuration is unavailable.");
+        if (!cancelled) setRuntimeConfig({ cloudName: data.cloudName, apiKey: data.apiKey });
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setRuntimeConfig({ error: error instanceof Error ? error.message : "Secure media upload configuration is unavailable." });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setConfigLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [envCloudName, envApiKey]);
+
+  if (configLoading && (!cloudName || !apiKey)) {
+    return (
+      <div className={variant === "panel" ? "rounded-md border bg-background/45 p-4" : ""}>
+        <Button type="button" variant="outline" disabled>
+          <Loader2 className="animate-spin" />
+          Preparing uploads
+        </Button>
+      </div>
+    );
+  }
 
   if (!cloudName || !apiKey) {
     return (
@@ -55,16 +101,16 @@ export function CloudinaryUpload({ folder, label, description, variant = "button
                 <h3 className="font-semibold">{label}</h3>
                 {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
               </div>
-              <Badge className="border-primary/40 bg-primary/10 text-primary">Cloudinary</Badge>
+              <Badge className="border-primary/40 bg-primary/10 text-primary">Secure upload</Badge>
             </div>
           </div>
         )}
         <Button type="button" variant="outline" disabled>
           <ImagePlus />
-          Configure Cloudinary
+          Uploads unavailable
         </Button>
         <p className="mt-2 text-xs text-muted-foreground">
-          Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_API_KEY to enable uploads.
+          {runtimeConfig?.error ?? "Secure media uploads are temporarily unavailable. Please try again later."}
         </p>
       </div>
     );
@@ -80,7 +126,7 @@ export function CloudinaryUpload({ folder, label, description, variant = "button
         maxFileSize: 5_000_000,
         resourceType: "image",
         clientAllowedFormats: ["jpg", "jpeg", "png", "webp"],
-        sources: ["local", "camera", "url"],
+        sources: ["local", "camera"],
         styles: {
           palette: {
             window: "#090b12",
@@ -103,7 +149,7 @@ export function CloudinaryUpload({ folder, label, description, variant = "button
         const asset = getUploadedAsset(results);
         if (!asset) {
           setState("error");
-          setMessage("Cloudinary upload finished without an image URL.");
+          setMessage("Upload finished without a usable image URL.");
           return;
         }
         setState("saving");
@@ -121,7 +167,7 @@ export function CloudinaryUpload({ folder, label, description, variant = "button
       onError={(error) => {
         console.error(error);
         setState("error");
-        setMessage("Cloudinary upload failed. Try a JPG, PNG, or WebP under 5 MB.");
+        setMessage("Upload failed. Try a JPG, PNG, or WebP under 5 MB.");
       }}
     >
       {({ open, isLoading }) => {
@@ -135,7 +181,7 @@ export function CloudinaryUpload({ folder, label, description, variant = "button
                     <h3 className="font-semibold">{label}</h3>
                     {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
                   </div>
-                  <Badge className="border-primary/40 bg-primary/10 text-primary">Cloudinary</Badge>
+                  <Badge className="border-primary/40 bg-primary/10 text-primary">Secure upload</Badge>
                 </div>
               </div>
             )}

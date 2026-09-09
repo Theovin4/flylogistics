@@ -1,9 +1,22 @@
 import type { MetadataRoute } from "next";
-import { siteConfig } from "@/lib/site";
+
+const canonicalSiteUrl = "https://flylogistics.com.ng";
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: { userAgent: "*", allow: "/", disallow: ["/api/", "/dashboard/"] },
-    sitemap: `${siteConfig.url}/sitemap.xml`
+    rules: [
+      {
+        userAgent: "Googlebot",
+        allow: "/",
+        disallow: ["/api/", "/dashboard/", "/admin/", "/auth/", "/customer/", "/driver/", "/dispatcher/", "/cloud/dashboard", "/cloud/settings", "/cloud/drivers", "/cloud/shipments", "/cloud/customers", "/cloud/analytics", "/cloud/billing", "/login", "/register", "/payment/", "/fly-admin-ops/"]
+      },
+      {
+        userAgent: "*",
+        allow: "/",
+        disallow: ["/api/", "/dashboard/", "/admin/", "/auth/", "/customer/", "/driver/", "/dispatcher/", "/cloud/dashboard", "/cloud/settings", "/cloud/drivers", "/cloud/shipments", "/cloud/customers", "/cloud/analytics", "/cloud/billing", "/login", "/register", "/payment/", "/fly-admin-ops/"]
+      }
+    ],
+    host: canonicalSiteUrl,
+    sitemap: `${canonicalSiteUrl}/sitemap.xml`
   };
 }

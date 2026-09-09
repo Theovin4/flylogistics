@@ -5,6 +5,7 @@ import type { Route as NextRoute } from "next";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ShieldCheck, Loader2 } from "lucide-react";
+import { adminLoginPath } from "@/lib/admin-access";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { canAccessRole, normalizeRole, type FlyRole } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,17 @@ type Profile = {
 export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const loginHref = `/login?next=${encodeURIComponent(pathname)}` as NextRoute;
+  const loginPath =
+    allowedRoles.includes("admin")
+      ? adminLoginPath
+      : allowedRoles.length === 1 && allowedRoles[0] === "customer"
+      ? "/customer/login"
+      : allowedRoles.length === 1 && allowedRoles[0] === "driver"
+        ? "/driver/login"
+        : allowedRoles.length === 1 && allowedRoles[0] === "dispatcher"
+          ? "/dispatcher/login"
+          : "/login";
+  const loginHref = `${loginPath}?next=${encodeURIComponent(pathname)}` as NextRoute;
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +41,7 @@ export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; 
     async function loadProfile() {
       const supabase = getSupabaseBrowser();
       if (!supabase) {
-        setError("Supabase Auth is not configured.");
+        setError("Secure sign-in is temporarily unavailable.");
         setLoading(false);
         return;
       }

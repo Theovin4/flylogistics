@@ -3,12 +3,13 @@ import { cleanEnv } from "@/lib/env";
 
 const allowedUploadFolders = [
   "fly-logistics/drivers",
+  "fly-logistics/driver-kyc",
   "fly-logistics/packages",
   "fly-logistics/proof-of-delivery",
   "fly-logistics/company-media"
 ] as const;
 
-export type CloudinaryUploadFolder = (typeof allowedUploadFolders)[number];
+export type CloudinaryUploadFolder = (typeof allowedUploadFolders)[number] | `${(typeof allowedUploadFolders)[number]}/${string}`;
 
 export type UploadedAsset = {
   publicId: string;

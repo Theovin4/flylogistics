@@ -3,15 +3,15 @@
 import { FormEvent, useState } from "react";
 import type { Route as NextRoute } from "next";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { canonicalSiteUrl } from "@/lib/site";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { normalizeRole, type FlyRole } from "@/lib/roles";
+import { canAccessRole, dashboardForRole, normalizeRole, type FlyRole } from "@/lib/roles";
 
 type AuthMode = "login" | "register" | "forgot" | "otp";
 
@@ -31,85 +31,172 @@ const initialForm = {
   otp: ""
 };
 
+type JsonResponse = {
+  error?: string;
+  role?: unknown;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresIn?: number;
+};
+
+async function fetchJson(input: RequestInfo | URL, init: RequestInit, fallbackError: string) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    const text = await response.text();
+    const data = text ? (JSON.parse(text) as JsonResponse) : {};
+
+    if (!response.ok) {
+      const detail = data.error ? ` ${data.error}` : "";
+      throw new Error(`${fallbackError}${detail} (${response.status}).`);
+    }
+
+    return data;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`${fallbackError} The request timed out. Please try again.`);
+    }
+    if (err instanceof SyntaxError) {
+      throw new Error(`${fallbackError} The server returned an unreadable response.`);
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export function AuthForm({ mode }: { mode: AuthMode }) {
-  const router = useRouter();
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   function updateField<Key extends keyof typeof form>(field: Key, value: (typeof form)[Key]) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
   async function loadProfile(accessToken: string) {
-    const response = await fetch("/api/auth/profile", {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error ?? "Unable to load your role.");
+    const data = await fetchJson(
+      "/api/auth/profile",
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+      "Unable to verify your Fly Logistics role."
+    );
     return normalizeRole(data.role);
   }
 
   async function syncServerSession(accessToken: string, expiresIn?: number) {
-    const response = await fetch("/api/auth/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accessToken, expiresIn })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error ?? "Unable to create secure session.");
+    const session = await fetchJson(
+      "/api/auth/session",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken, expiresIn })
+      },
+      "Unable to create a secure browser session."
+    );
+    return session.role ? normalizeRole(session.role) : null;
   }
 
   async function clearServerSession() {
     await fetch("/api/auth/session", { method: "DELETE" });
   }
 
-  function adminRedirectTarget() {
+  function requestedRedirectTarget() {
     const next = new URLSearchParams(window.location.search).get("next");
-    return next?.startsWith("/dashboard") ? next : "/dashboard/admin";
+    return next && (next.startsWith("/dashboard") || next.startsWith("/customer")) ? next : null;
   }
 
-  async function finishAdminSignIn(accessToken: string, expiresIn?: number) {
+  function redirectTargetForRole(role: FlyRole) {
+    const next = requestedRedirectTarget();
+
+    if (role === "admin") return "/dashboard/admin";
+    if (role === "customer") return "/customer";
+
+    if (next?.startsWith(dashboardForRole(role))) return next;
+    if (next?.startsWith("/customer") && canAccessRole(role, ["customer"])) return next;
+
+    return dashboardForRole(role);
+  }
+
+  async function finishSignIn(accessToken: string, expiresIn?: number) {
     const role = await loadProfile(accessToken);
-    if (role !== "admin") {
+    let target: string;
+
+    try {
+      target = redirectTargetForRole(role);
+    } catch (error) {
       const supabase = getSupabaseBrowser();
       await supabase?.auth.signOut();
       await clearServerSession();
-      throw new Error("Admin access is required for Fly Logistics dashboards.");
+      throw error;
     }
 
-    await syncServerSession(accessToken, expiresIn);
-    router.push(adminRedirectTarget() as NextRoute);
-    router.refresh();
+    const serverRole = await syncServerSession(accessToken, expiresIn);
+    if (serverRole && serverRole !== role) {
+      throw new Error(`Your account role changed during sign-in. Please sign in again.`);
+    }
+    setMessage(role === "customer" ? "Signed in. Opening your customer portal..." : "Signed in. Opening your dashboard...");
+    return target;
+  }
+
+  function navigateAfterAuth(target: string) {
+    window.location.assign(target);
+    window.setTimeout(() => {
+      setError("You are signed in, but the redirect did not complete. Please open your dashboard from the navigation.");
+      setLoading(false);
+    }, 8000);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    let navigating = false;
     setLoading(true);
     setError(null);
     setMessage(null);
 
     try {
       const supabase = getSupabaseBrowser();
-      if (!supabase) throw new Error("Supabase Auth is not configured.");
+      if (!supabase) throw new Error("Secure sign-in is temporarily unavailable.");
 
       if (mode === "login") {
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email: form.email,
-          password: form.password
+        await clearServerSession().catch(() => undefined);
+        await supabase.auth.signOut().catch(() => undefined);
+        window.localStorage.removeItem("fly_role");
+        window.sessionStorage.removeItem("fly_role");
+
+        const login = await fetchJson(
+          "/api/auth/login",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: form.email.trim(), password: form.password })
+          },
+          "Unable to sign in."
+        );
+        if (!login.accessToken || !login.refreshToken) {
+          throw new Error("No secure session was returned.");
+        }
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: login.accessToken,
+          refresh_token: login.refreshToken
         });
-        if (signInError) throw signInError;
-        if (!data.session?.access_token) throw new Error("No Supabase session was returned.");
-        await finishAdminSignIn(data.session.access_token, data.session.expires_in);
+        if (sessionError) throw new Error(`Unable to persist browser session: ${sessionError.message}`);
+
+        const target = await finishSignIn(login.accessToken, login.expiresIn);
+        navigating = true;
+        navigateAfterAuth(target);
         return;
       }
 
       if (mode === "register") {
         const { data, error: signUpError } = await supabase.auth.signUp({
-          email: form.email,
+          email: form.email.trim(),
           password: form.password,
           options: {
+            emailRedirectTo: `${canonicalSiteUrl}/login`,
             data: {
               full_name: form.fullName,
               company: form.company,
@@ -119,7 +206,9 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         });
         if (signUpError) throw signUpError;
         if (data.session?.access_token) {
-          await finishAdminSignIn(data.session.access_token, data.session.expires_in);
+          const target = await finishSignIn(data.session.access_token, data.session.expires_in);
+          navigating = true;
+          navigateAfterAuth(target);
           return;
         }
         setMessage("Account created. Check your email to confirm access, then sign in.");
@@ -127,39 +216,41 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
       }
 
       if (mode === "forgot") {
-        const redirectTo = `${window.location.origin}/login`;
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(form.email, { redirectTo });
+        const redirectTo = `${canonicalSiteUrl}/login`;
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(form.email.trim(), { redirectTo });
         if (resetError) throw resetError;
         setMessage("Password reset instructions sent.");
         return;
       }
 
       const { data, error: otpError } = await supabase.auth.verifyOtp({
-        email: form.email,
+        email: form.email.trim(),
         token: form.otp,
         type: "email"
       });
       if (otpError) throw otpError;
-      if (!data.session?.access_token) throw new Error("No Supabase session was returned.");
-      await finishAdminSignIn(data.session.access_token, data.session.expires_in);
+      if (!data.session?.access_token) throw new Error("No secure session was returned.");
+      const target = await finishSignIn(data.session.access_token, data.session.expires_in);
+      navigating = true;
+      navigateAfterAuth(target);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed.");
     } finally {
-      setLoading(false);
+      if (!navigating) setLoading(false);
     }
   }
 
   return (
-    <main className="grid min-h-screen place-items-center px-4 py-10">
+    <main className="grid min-h-screen place-items-center px-4 py-6 sm:py-10">
       <div className="w-full max-w-md">
-        <div className="mb-8 flex justify-center">
+        <div className="mb-6 flex justify-center sm:mb-8">
           <Logo />
         </div>
         <Card className="glass">
-          <CardHeader>
-            <CardTitle>{titles[mode]}</CardTitle>
+          <CardHeader className="p-5 sm:p-6">
+            <CardTitle className="text-xl sm:text-2xl">{titles[mode]}</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-5 pt-0 sm:p-6 sm:pt-0">
             <form className="grid gap-4" onSubmit={handleSubmit}>
               {mode === "register" && (
                 <>
@@ -180,9 +271,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
                       className="h-11 rounded-md border bg-background/70 px-3 text-sm"
                     >
                       <option value="customer">Customer</option>
-                      <option value="driver">Driver</option>
-                      <option value="dispatcher">Dispatcher</option>
-                      <option value="admin">Admin</option>
+                      <option value="driver">Driver/Rider</option>
                     </select>
                   </div>
                 </>
@@ -198,7 +287,25 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
               {(mode === "login" || mode === "register") && (
                 <div className="grid gap-2">
                   <Label htmlFor="password">Password</Label>
-                  <Input id="password" type="password" value={form.password} onChange={(event) => updateField("password", event.target.value)} required minLength={8} />
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      value={form.password}
+                      onChange={(event) => updateField("password", event.target.value)}
+                      required
+                      minLength={mode === "register" ? 8 : 1}
+                      className="pr-11"
+                    />
+                    <button
+                      type="button"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                      onClick={() => setShowPassword((current) => !current)}
+                    >
+                      {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -209,20 +316,20 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
                 </div>
               )}
 
-              <Button type="submit" className="mt-2" disabled={loading}>
+              <Button type="submit" className="mt-2 w-full" disabled={loading}>
                 {loading ? <Loader2 className="animate-spin" /> : null}
                 {mode === "register" ? "Create account" : "Continue"}
               </Button>
             </form>
 
             {message && (
-              <div className="mt-4 flex gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-500">
+              <div role="status" aria-live="polite" className="mt-4 flex gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-500">
                 <CheckCircle2 className="size-4" />
                 {message}
               </div>
             )}
             {error && (
-              <div className="mt-4 flex gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              <div role="alert" aria-live="assertive" className="mt-4 flex gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
                 <AlertTriangle className="size-4" />
                 {error}
               </div>
@@ -231,7 +338,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
             <div className="mt-5 flex flex-wrap justify-center gap-3 text-sm text-muted-foreground">
               {mode === "login" ? (
                 <>
-                  <span>No account? <Link className="text-primary" href="/auth/register">Register</Link></span>
+                  <span>No account? <Link className="text-primary" href={"/register" as NextRoute}>Register</Link></span>
                   <Link className="text-primary" href="/auth/forgot-password">Forgot password?</Link>
                 </>
               ) : (

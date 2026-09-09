@@ -6,8 +6,12 @@
   "regions": ["iad1"],
   "crons": [
     {
-      "path": "/api/webhooks/logistics",
+      "path": "/api/cron/blog",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/background-jobs",
+      "schedule": "30 1 * * *"
     }
   ]
 }

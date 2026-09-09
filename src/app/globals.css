@@ -80,11 +80,14 @@
 }
 
 html {
+  max-width: 100%;
   scroll-behavior: smooth;
 }
 
 body {
+  max-width: 100%;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top left, color-mix(in oklch, var(--primary) 22%, transparent), transparent 34rem),
     radial-gradient(circle at 85% 20%, color-mix(in oklch, var(--orbit) 14%, transparent), transparent 28rem),
@@ -93,8 +96,114 @@ body {
   text-rendering: geometricPrecision;
 }
 
+input,
+textarea,
+select {
+  font: inherit;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: default;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  caret-color: var(--primary);
+}
+
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: color-mix(in oklch, var(--primary) 22%, transparent);
+}
+
+input:not(:disabled),
+textarea:not(:disabled),
+select:not(:disabled) {
+  pointer-events: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+form {
+  isolation: isolate;
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea, select) {
+  min-height: 2.75rem;
+  border-color: var(--input);
+  background-color: color-mix(in oklch, var(--background) 78%, transparent);
+  color: var(--foreground);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea, select):focus {
+  border-color: color-mix(in oklch, var(--primary) 72%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 22%, transparent);
+  outline: none;
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea, select)::placeholder {
+  color: color-mix(in oklch, var(--muted-foreground) 82%, transparent);
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea, select):disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+textarea {
+  resize: vertical;
+}
+
+select {
+  max-width: 100%;
+}
+
+@media (pointer: coarse) {
+  :where(button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]) {
+    min-height: 2.75rem;
+  }
+}
+
+@media (max-width: 1024px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+    line-height: 1.45;
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    transform: translateZ(0);
+  }
+}
+
 ::selection {
   background: color-mix(in oklch, var(--primary) 35%, transparent);
+}
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 100;
+  transform: translateY(-150%);
+  border: 1px solid color-mix(in oklch, var(--primary) 55%, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  padding: 0.7rem 1rem;
+  font-weight: 800;
+  transition: transform 160ms ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
 }
 
 .glass {
@@ -109,7 +218,13 @@ body {
   filter: drop-shadow(0 0 18px color-mix(in oklch, var(--primary) 70%, transparent));
 }
 
+.fly-tracking-vehicle-moving {
+  animation: fly-tracking-drive 2.8s ease-in-out infinite;
+  filter: drop-shadow(0 0 16px color-mix(in oklch, var(--primary) 70%, transparent));
+}
+
 .grid-field {
+  pointer-events: none;
   background-image:
     linear-gradient(color-mix(in oklch, var(--foreground) 7%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in oklch, var(--foreground) 7%, transparent) 1px, transparent 1px);
@@ -117,18 +232,146 @@ body {
   mask-image: linear-gradient(to bottom, black, transparent 76%);
 }
 
+.landing-shell {
+  animation: landing-fade 650ms ease-out backwards;
+}
+
+.landing-shell [data-route-line] {
+  animation: route-line-draw 1.4s ease-out both;
+  transform-origin: left center;
+}
+
+.landing-shell [data-route-line]:nth-of-type(2) {
+  animation-delay: 160ms;
+}
+
+.hero-route {
+  stroke-dasharray: 12 14;
+  animation: hero-route-flow 2.8s linear infinite;
+  filter: drop-shadow(0 0 14px rgb(255 122 0 / 0.48));
+}
+
+.hero-route-b {
+  animation-duration: 3.4s;
+  animation-delay: -0.9s;
+  filter: drop-shadow(0 0 14px rgb(56 189 248 / 0.28));
+}
+
+.hero-route-c {
+  animation-duration: 4.2s;
+  animation-delay: -1.6s;
+}
+
+.hero-pulse-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hero-node-pulse 2.6s ease-in-out infinite;
+}
+
+.hero-vehicle {
+  position: absolute;
+  z-index: 12;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgb(255 159 28 / 0.68);
+  border-radius: 12px;
+  color: #070707;
+  background: linear-gradient(135deg, #ffd29a, #ff7a00 56%, #ff5a00);
+  box-shadow: 0 18px 45px rgb(255 122 0 / 0.28);
+  transform: translate(-50%, -50%);
+  will-change: left, top;
+}
+
+.hero-vehicle-a {
+  animation: hero-vehicle-a 7.4s ease-in-out infinite alternate;
+}
+
+.hero-vehicle-b {
+  animation: hero-vehicle-b 8.2s ease-in-out infinite alternate;
+}
+
+.hero-vehicle-c {
+  animation: hero-vehicle-c 9.4s ease-in-out infinite alternate;
+}
+
 @keyframes float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-12px); }
+}
+
+@keyframes landing-fade {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes route-line-draw {
+  from { opacity: 0; transform: scaleX(0); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+
+@keyframes hero-route-flow {
+  to { stroke-dashoffset: -52; }
+}
+
+@keyframes hero-node-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.88); }
+  50% { opacity: 1; transform: scale(1.35); }
+}
+
+@keyframes hero-vehicle-a {
+  0% { left: 18%; top: 68%; }
+  45% { left: 46%; top: 36%; }
+  100% { left: 80%; top: 21%; }
+}
+
+@keyframes hero-vehicle-b {
+  0% { left: 20%; top: 68%; }
+  48% { left: 50%; top: 59%; }
+  100% { left: 84%; top: 63%; }
+}
+
+@keyframes hero-vehicle-c {
+  0% { left: 20%; top: 68%; }
+  45% { left: 42%; top: 82%; }
+  100% { left: 72%; top: 84%; }
+}
+
+@keyframes fly-tracking-drive {
+  0%, 100% { transform: translate(-2px, 0) rotate(-2deg); }
+  35% { transform: translate(7px, -4px) rotate(4deg); }
+  70% { transform: translate(2px, 5px) rotate(1deg); }
 }
 
 .animate-float {
   animation: float 7s ease-in-out infinite;
 }
 
+.success-pulse {
+  animation: success-pulse 1.8s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-route,
+  .hero-pulse-node,
+  .hero-vehicle,
+  .fly-tracking-vehicle-moving,
+  .landing-shell,
+  .animate-float,
+  .success-pulse {
+    animation: none;
+  }
+
+  .hero-vehicle-a { left: 80%; top: 21%; }
+  .hero-vehicle-b { left: 84%; top: 63%; }
+  .hero-vehicle-c { left: 72%; top: 84%; }
+}
+
 .leaflet-container {
   background: #070911;
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  touch-action: pan-x pan-y;
 }
 
 .leaflet-control-zoom a {
@@ -160,6 +403,46 @@ body {
   transition: transform 700ms ease, filter 700ms ease, opacity 700ms ease;
 }
 
+.fly-driver-marker-icon {
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.fly-driver-marker-count {
+  position: absolute;
+  right: -7px;
+  top: -8px;
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 0.65);
+  border-radius: 999px;
+  background: #080a10;
+  color: #ff9f1c;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.fly-driver-marker-truck {
+  border-radius: 10px;
+}
+
+.fly-driver-marker-van {
+  background: linear-gradient(135deg, #ffd166, #ff7a1a);
+}
+
+.fly-driver-marker-hub {
+  background: linear-gradient(135deg, #f8fafc, #94a3b8);
+}
+
+.leaflet-marker-icon {
+  transition: transform 700ms ease;
+}
+
 .fly-driver-marker::after {
   content: "";
   position: absolute;
@@ -185,4 +468,23 @@ body {
 @keyframes driver-pulse {
   0% { opacity: 0.75; transform: scale(0.88); }
   100% { opacity: 0; transform: scale(1.28); }
+}
+
+@keyframes success-pulse {
+  0% { opacity: 0; transform: scale(0.96); }
+  55% { opacity: 1; transform: scale(1.015); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 640px) {
+  .leaflet-popup-content {
+    margin: 10px 12px !important;
+    max-width: 72vw;
+  }
+
+  .leaflet-control-zoom a {
+    width: 30px !important;
+    height: 30px !important;
+    line-height: 30px !important;
+  }
 }

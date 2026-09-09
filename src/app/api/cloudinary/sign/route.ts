@@ -1,16 +1,46 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { requireRole } from "@/lib/request-auth";
 import { getCloudinary, isAllowedCloudinaryFolder } from "@/lib/cloudinary";
+import { cleanEnv } from "@/lib/env";
+import { enforceRateLimit, parseJson } from "@/server/api";
+import { logApiError, requestContext } from "@/server/monitoring";
 
 const signRequestSchema = z.object({
   paramsToSign: z.record(z.union([z.string(), z.number(), z.boolean()]))
 });
 
-export async function POST(request: Request) {
-  const parsed = signRequestSchema.safeParse(await request.json());
+const allowedSignatureParams = new Set([
+  "folder",
+  "timestamp",
+  "public_id",
+  "tags",
+  "context",
+  "upload_preset",
+  "source",
+  "resource_type",
+  "resourceType",
+  "max_file_size",
+  "allowed_formats",
+  "client_allowed_formats",
+  "unique_filename",
+  "use_filename"
+]);
 
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid Cloudinary signature request." }, { status: 400 });
+export async function POST(request: Request) {
+  const limited = await enforceRateLimit(request, "cloudinary-sign", { limit: 30, windowSeconds: 60 });
+  if (limited) return limited;
+
+  const access = await requireRole(request, ["admin", "dispatcher", "driver"]);
+  if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
+  if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
+
+  const parsed = await parseJson(request, signRequestSchema, "Invalid upload request.");
+  if (parsed.response) return parsed.response;
+
+  const disallowedParams = Object.keys(parsed.data.paramsToSign).filter((key) => !allowedSignatureParams.has(key));
+  if (disallowedParams.length > 0) {
+    return NextResponse.json({ error: "Upload request contains unsupported signing parameters." }, { status: 400 });
   }
 
   const folder = String(parsed.data.paramsToSign.folder ?? "");
@@ -18,12 +48,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Upload folder is not allowed." }, { status: 403 });
   }
 
+  const resourceType = String(parsed.data.paramsToSign.resource_type ?? parsed.data.paramsToSign.resourceType ?? "image");
+  if (resourceType !== "image") {
+    return NextResponse.json({ error: "Only image uploads are allowed." }, { status: 400 });
+  }
+
+  const maxFileSize = Number(parsed.data.paramsToSign.max_file_size ?? 0);
+  if (Number.isFinite(maxFileSize) && maxFileSize > 5_000_000) {
+    return NextResponse.json({ error: "Image uploads must be 5 MB or less." }, { status: 400 });
+  }
+
   try {
     const cloudinary = getCloudinary();
-    const signature = cloudinary.utils.api_sign_request(parsed.data.paramsToSign, process.env.CLOUDINARY_API_SECRET!);
+    const apiSecret = cleanEnv(process.env.CLOUDINARY_API_SECRET);
+    if (!apiSecret) throw new Error("Cloudinary API secret is not configured.");
+    const signature = cloudinary.utils.api_sign_request(parsed.data.paramsToSign, apiSecret);
     return NextResponse.json({ signature });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Cloudinary is not configured." }, { status: 500 });
+    logApiError(error, "Cloudinary signature generation failed.", requestContext(request, { folder }));
+    return NextResponse.json({ error: "Secure upload is temporarily unavailable." }, { status: 500 });
   }
 }

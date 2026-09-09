@@ -4,8 +4,13 @@ node_modules
 .env*.local
 dist
 coverage
+backups/
 *.log
 prisma/dev.db
 tsconfig.tsbuildinfo
+
+# Python-generated cache artifacts
+__pycache__/
+*.py[cod]
 
 .vercel

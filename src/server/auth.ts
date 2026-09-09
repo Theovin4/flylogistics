@@ -1,45 +1,25 @@
-import NextAuth from "next-auth";
-import Credentials from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@auth/prisma-adapter";
-import { z } from "zod";
-import { getDb } from "@/server/db";
+import { NextResponse } from "next/server";
 
-const credentialsSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8)
-});
+function legacyAuthDisabled() {
+  return NextResponse.json(
+    { error: "Legacy authentication is disabled. Use the Fly Logistics Supabase Auth flow." },
+    { status: 404 }
+  );
+}
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(getDb()),
-  session: { strategy: "jwt" },
-  pages: { signIn: "/auth/login" },
-  providers: [
-    Credentials({
-      credentials: {
-        email: {},
-        password: {}
-      },
-      authorize: async (credentials) => {
-        const parsed = credentialsSchema.safeParse(credentials);
-        if (!parsed.success) return null;
-        const user = {
-          id: "demo-user",
-          email: parsed.data.email,
-          name: "Fly Operator",
-          role: "ADMIN"
-        };
-        return user;
-      }
-    })
-  ],
-  callbacks: {
-    jwt({ token, user }) {
-      if (user) token.role = (user as { role?: string }).role ?? "CUSTOMER";
-      return token;
-    },
-    session({ session, token }) {
-      if (session.user) (session.user as { role?: string }).role = String(token.role ?? "CUSTOMER");
-      return session;
-    }
-  }
-});
+export const handlers = {
+  GET: legacyAuthDisabled,
+  POST: legacyAuthDisabled
+};
+
+export async function auth() {
+  return null;
+}
+
+export async function signIn() {
+  throw new Error("Legacy NextAuth sign-in is disabled. Use Supabase Auth.");
+}
+
+export async function signOut() {
+  throw new Error("Legacy NextAuth sign-out is disabled. Use Supabase Auth.");
+}
