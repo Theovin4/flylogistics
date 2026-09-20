@@ -86,5 +86,6 @@ test("customer-facing tracking uses concise Fly-only milestones", () => {
   assert.match(shipments, /location: "Fly Logistics network"/);
   assert.match(shipments, /publicTracking \? publicShipmentTimeline\(record\)/);
   assert.match(customerOverview, /timeline: publicShipmentTimeline\(shipment\)/);
+  assert.match(read("src/lib/tracking-status.ts"), /delivery\\s\+partner/);
   assert.doesNotMatch(read("src/lib/tracking-status.ts"), /Delivery partner assigned/);
 });

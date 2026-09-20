@@ -1,6 +1,6 @@
 import { normalizeShipmentStatus, type ShipmentStatus, type ShipmentTimelineEvent } from "@/lib/shipments";
 
-const carrierNamePattern = /\b(fez|sendbox|easyship|carrier|waybill|external|third[-\s]?party)\b/i;
+const carrierNamePattern = /\b(fez|sendbox|easyship|carrier|waybill|external|third[-\s]?party|delivery\s+partner|fulfilment\s+partner|fulfillment\s+partner|provider)\b/i;
 const carrierReferencePattern = /\b(?!FLY-)[A-Z0-9]{10,}\b/;
 
 function containsCarrierText(value: string) {
