@@ -76,3 +76,15 @@ test("private server credentials are not declared as public variables", () => {
   const forbidden = /NEXT_PUBLIC_(?:SUPABASE_SERVICE_ROLE_KEY|CLOUDINARY_API_SECRET|FLUTTERWAVE_SECRET_KEY|FEZ_PASSWORD|FEZ_SECRET_KEY|WHATSAPP_CLOUD_ACCESS_TOKEN|RESEND_API_KEY)/;
   for (const file of files) assert.doesNotMatch(read(file), forbidden, `${file} exposes a private environment variable`);
 });
+
+test("customer-facing tracking uses concise Fly-only milestones", () => {
+  const shipments = read("src/lib/shipments.ts");
+  const customerOverview = read("src/app/api/customer/overview/route.ts");
+
+  assert.match(shipments, /const publicTimelineLimit = 7/);
+  assert.match(shipments, /export function publicShipmentTimeline/);
+  assert.match(shipments, /location: "Fly Logistics network"/);
+  assert.match(shipments, /publicTracking \? publicShipmentTimeline\(record\)/);
+  assert.match(customerOverview, /timeline: publicShipmentTimeline\(shipment\)/);
+  assert.doesNotMatch(read("src/lib/tracking-status.ts"), /Delivery partner assigned/);
+});

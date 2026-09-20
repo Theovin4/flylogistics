@@ -107,9 +107,9 @@ export function flyTrackingCopy(status?: string | null, carrierStatus?: string |
       };
     case "DRIVER_ASSIGNED":
       return {
-        label: "Delivery partner assigned",
-        description: "A Fly Logistics delivery partner has been assigned and pickup coordination is underway.",
-        message: "A Fly Logistics delivery partner has been assigned to your shipment."
+        label: "Pickup scheduled",
+        description: "Pickup coordination is underway and the next movement update will appear here.",
+        message: "Pickup has been scheduled for your shipment."
       };
     case "PICKED_UP":
       return {

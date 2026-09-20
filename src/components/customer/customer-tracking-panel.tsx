@@ -8,8 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { transportationTypeLabel } from "@/lib/driver-data";
 import { isInternationalDelivery, isNigeriaCountry } from "@/lib/pricing";
-import { isPrivateShipmentTimelineEvent, sortShipmentTimelineLatestFirst, type ShipmentRecord } from "@/lib/shipments";
-import { sanitizeTrackingCopyForCustomers } from "@/lib/tracking-status";
+import { publicShipmentTimeline, type ShipmentRecord } from "@/lib/shipments";
 
 function statusLabel(value: string | null | undefined) {
   return String(value ?? "pending").replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -72,9 +71,7 @@ export function CustomerTrackingPanel({ shipments }: { shipments: ShipmentRecord
   }, [activeShipments, shipments, trackingId]);
   const selectedTimeline = useMemo(() => {
     if (!selectedShipment) return [];
-    const fallback = [{ label: "Shipment created", location: selectedShipment.pickup_address, completed: true }];
-    const events = selectedShipment.timeline?.length ? selectedShipment.timeline : fallback;
-    return sortShipmentTimelineLatestFirst(events.filter((event) => !isPrivateShipmentTimelineEvent(event)));
+    return publicShipmentTimeline(selectedShipment);
   }, [selectedShipment]);
 
   return (
@@ -196,9 +193,9 @@ export function CustomerTrackingPanel({ shipments }: { shipments: ShipmentRecord
                     <span className="flex min-w-0 items-start gap-2">
                       <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
                       <span>
-                        <span className="block font-medium">{sanitizeTrackingCopyForCustomers(event.label)}</span>
+                        <span className="block font-medium">{event.label}</span>
                         <span className="text-xs text-muted-foreground">
-                          {sanitizeTrackingCopyForCustomers(event.location, "Fly Logistics network") || "Fly Logistics network"}{formatDate(event.occurred_at) ? ` - ${formatDate(event.occurred_at)}` : ""}
+                          {event.location || "Fly Logistics network"}{formatDate(event.occurred_at) ? ` - ${formatDate(event.occurred_at)}` : ""}
                         </span>
                       </span>
                     </span>

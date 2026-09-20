@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { isPrivateShipmentTimelineEvent, sortShipmentTimelineLatestFirst, type QuoteRequestRecord, type ShipmentRecord } from "@/lib/shipments";
+import { publicShipmentTimeline, type QuoteRequestRecord, type ShipmentRecord } from "@/lib/shipments";
 import { requireRole } from "@/lib/request-auth";
 import { shipmentWithDriverSelect } from "@/lib/shipment-data";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { sanitizeTrackingCopyForCustomers } from "@/lib/tracking-status";
 import { enforceRateLimit } from "@/server/api";
 import { logApiError, requestContext } from "@/server/monitoring";
 import { getTenantContextForProfile } from "@/server/tenancy";
@@ -38,17 +37,7 @@ function sanitizeCustomerShipment(shipment: ShipmentRecord): ShipmentRecord {
     carrier_synced_at: null,
     external_tracking_enabled: false,
     proof_image_url: null,
-    timeline: sortShipmentTimelineLatestFirst(
-      (shipment.timeline?.length ? shipment.timeline : [{ label: "Shipment created", location: shipment.pickup_address, completed: true }])
-        .filter((event) => !isPrivateShipmentTimelineEvent(event))
-    ).map((event) => ({
-      label: sanitizeTrackingCopyForCustomers(event.label),
-      title: sanitizeTrackingCopyForCustomers(event.title),
-      location: sanitizeTrackingCopyForCustomers(event.location, "Fly Logistics network") || "Fly Logistics network",
-      description: sanitizeTrackingCopyForCustomers(event.description, "Fly Logistics network status updated."),
-      completed: event.completed,
-      occurred_at: event.occurred_at
-    }))
+    timeline: publicShipmentTimeline(shipment)
   };
 
   if (safeShipment.assigned_driver) safeShipment.assigned_driver = { ...safeShipment.assigned_driver, phone: null };

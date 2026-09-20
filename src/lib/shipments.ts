@@ -89,7 +89,7 @@ export function shipmentCustomerMessage(status: string | null | undefined) {
     case "CONFIRMED":
       return "Your shipment is confirmed and being prepared for pickup.";
     case "DRIVER_ASSIGNED":
-      return "A Fly Logistics delivery partner has been assigned to your shipment.";
+      return "Pickup has been scheduled and your shipment is being prepared for collection.";
     case "PICKED_UP":
       return "Your package has been picked up and is now in the Fly Logistics delivery network.";
     case "IN_TRANSIT":
@@ -244,7 +244,7 @@ export type ShipmentRecord = {
   updated_at?: string;
 };
 
-const publicUnsafeCarrierNamePattern = /\b(fez|sendbox|easyship|carrier|waybill|external|third[-\s]?party)\b/i;
+const publicUnsafeCarrierNamePattern = /\b(fez|sendbox|easyship|carrier|waybill|external|third[-\s]?party|delivery\s+partner|fulfilment\s+partner|fulfillment\s+partner|provider)\b/i;
 const publicUnsafeCarrierReferencePattern = /\b(?!FLY-)[A-Z0-9]{10,}\b/;
 
 function containsPublicUnsafeTrackingText(text: string) {
@@ -271,6 +271,49 @@ export function sortShipmentTimelineLatestFirst(timeline: ShipmentTimelineEvent[
       return right.index - left.index;
     })
     .map(({ event }) => event);
+}
+
+const publicTimelineLimit = 7;
+
+function publicTimelineLabel(event: ShipmentTimelineEvent) {
+  const text = `${event.label ?? ""} ${event.title ?? ""} ${event.description ?? ""}`.toLowerCase();
+  if (/delivered|delivery\s+complete/.test(text)) return "Delivery completed";
+  if (/cancel/.test(text)) return "Shipment cancelled";
+  if (/exception|failed|hold|operations\s+review/.test(text)) return "Shipment update";
+  if (/arriv|out\s+for\s+delivery/.test(text)) return "Arrived near destination";
+  if (/transit|dispatch|moving|linehaul|forward/.test(text)) return "Shipment in transit";
+  if (/picked|collected|pickup\s+complete/.test(text)) return "Pickup completed";
+  if (/partner|carrier|driver\s+assigned|assigned|pickup\s+being\s+arranged|pending\s+pick/.test(text)) return "Pickup scheduled";
+  if (/payment/.test(text)) return "Payment confirmed";
+  if (/confirm|review|quote\s+approved|booked|processed/.test(text)) return "Shipment confirmed";
+  if (/created|pending/.test(text)) return "Shipment created";
+  return "Shipment update";
+}
+
+/** Keeps public and customer tracking concise and free of internal fulfilment detail. */
+export function publicShipmentTimeline(record: Pick<ShipmentRecord, "timeline" | "pickup_address" | "status">): ShipmentTimelineEvent[] {
+  const source = record.timeline?.length
+    ? record.timeline
+    : [
+        { label: "Shipment created", location: record.pickup_address, completed: true },
+        { label: shipmentStatusLabel(record.status), completed: record.status === "DELIVERED" }
+      ];
+  const seen = new Set<string>();
+
+  return sortShipmentTimelineLatestFirst(source)
+    .filter((event) => !isPrivateShipmentTimelineEvent(event))
+    .map((event) => ({
+      label: publicTimelineLabel(event),
+      location: "Fly Logistics network",
+      completed: event.completed,
+      occurred_at: event.occurred_at
+    }))
+    .filter((event) => {
+      if (seen.has(event.label)) return false;
+      seen.add(event.label);
+      return true;
+    })
+    .slice(0, publicTimelineLimit);
 }
 
 export type QuoteRequestRecord = {
@@ -459,8 +502,7 @@ export function normalizeShipment(record: ShipmentRecord, options: { includeProo
         { label: "Shipment created", location: record.pickup_address, completed: true },
         { label: String(record.status).replaceAll("_", " "), location: record.delivery_address, completed: record.status === "DELIVERED" }
       ];
-  const visibleEvents = publicTracking ? events.filter((event) => !isPrivateShipmentTimelineEvent(event)) : events;
-  const sortedEvents = sortShipmentTimelineLatestFirst(visibleEvents);
+  const sortedEvents = publicTracking ? publicShipmentTimeline(record) : sortShipmentTimelineLatestFirst(events);
   return {
     trackingId: record.tracking_id,
     status: record.status,

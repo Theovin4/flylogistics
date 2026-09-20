@@ -54,9 +54,8 @@ import {
   quoteLifecycleTone,
   quoteStatusLabel
 } from "@/lib/quotes";
-import { isPrivateShipmentTimelineEvent, sortShipmentTimelineLatestFirst, type QuoteRequestRecord, type ShipmentRecord } from "@/lib/shipments";
+import { publicShipmentTimeline, type QuoteRequestRecord, type ShipmentRecord } from "@/lib/shipments";
 import { canonicalSiteUrl } from "@/lib/site";
-import { sanitizeTrackingCopyForCustomers } from "@/lib/tracking-status";
 
 const CustomerBookingWorkspace = dynamic(
   () => import("@/components/customer/customer-booking-workspace").then((module) => module.CustomerBookingWorkspace),
@@ -2148,17 +2147,14 @@ export function CustomerDashboard() {
                       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
                         <div className="grid gap-2">
                           <h3 className="text-sm font-semibold">Timeline</h3>
-                          {sortShipmentTimelineLatestFirst(
-                            (shipment.timeline?.length ? shipment.timeline : [{ label: "Shipment created", location: shipment.pickup_address, completed: true }])
-                              .filter((event) => !isPrivateShipmentTimelineEvent(event))
-                          ).map((event, index) => (
+                          {publicShipmentTimeline(shipment).map((event, index) => (
                             <div key={`${shipment.tracking_id}-${event.label}-${index}`} className="flex flex-col gap-2 rounded-md border bg-background/35 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                               <span className="flex min-w-0 items-start gap-2">
                                 <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
                                 <span>
-                                  <span className="block font-medium">{sanitizeTrackingCopyForCustomers(event.label)}</span>
+                                  <span className="block font-medium">{event.label}</span>
                                   <span className="text-xs text-muted-foreground">
-                                    {sanitizeTrackingCopyForCustomers(event.location, "Fly Logistics network") || "Fly Logistics network"}{formatDate(event.occurred_at) ? ` - ${formatDate(event.occurred_at)}` : ""}
+                                    {event.location || "Fly Logistics network"}{formatDate(event.occurred_at) ? ` - ${formatDate(event.occurred_at)}` : ""}
                                   </span>
                                 </span>
                               </span>
