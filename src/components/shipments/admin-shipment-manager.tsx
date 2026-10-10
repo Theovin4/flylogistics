@@ -1805,6 +1805,7 @@ export function AdminShipmentManager({ mode = "shipments" }: { mode?: AdminShipm
             const conversionReady = canConvertQuote(quote.status, quote.payment_status);
             const draft = quoteDrafts[quote.request_id] ?? quoteDraftFromRecord(quote);
             const expanded = expandedQuotes[quote.request_id] ?? false;
+            const merchantPriceLocked = Boolean(quote.business_account_id && quote.final_price != null);
             return (
               <div key={quote.request_id} className="overflow-hidden rounded-md border bg-background/45">
                 <button
@@ -1866,6 +1867,13 @@ export function AdminShipmentManager({ mode = "shipments" }: { mode?: AdminShipm
                         </span>
                       </span>
                     </div>
+                    {merchantPriceLocked ? (
+                      <div className="mt-3 grid gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs sm:grid-cols-3">
+                        <span>Standard price <strong className="block text-foreground">{moneyFormatter.format(Number(quote.standard_price ?? quote.final_price ?? 0))}</strong></span>
+                        <span className="text-emerald-500">Merchant discount <strong className="block">-{moneyFormatter.format(Number(quote.discount_amount ?? 0))}</strong></span>
+                        <span>Final charge <strong className="block text-foreground">{moneyFormatter.format(Number(quote.final_price ?? 0))}</strong></span>
+                      </div>
+                    ) : null}
                     {quote.notes && <p className="mt-3 rounded-md border bg-background/35 p-3 text-sm text-muted-foreground">{quote.notes}</p>}
                     {(quote.quote_notes || quote.review_notes) && (
                       <p className="mt-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
@@ -1885,13 +1893,13 @@ export function AdminShipmentManager({ mode = "shipments" }: { mode?: AdminShipm
                   </div>
                   <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:min-w-[460px]">
                     <div className="grid gap-1">
-                      <Label htmlFor={`${quote.request_id}-price`}>Quoted price</Label>
+                      <Label htmlFor={`${quote.request_id}-price`}>{merchantPriceLocked ? "Merchant price (locked)" : "Quoted price"}</Label>
                       <Input
                         id={`${quote.request_id}-price`}
                         inputMode="decimal"
                         value={draft.quotedPrice}
                         onChange={(event) => updateQuoteDraft(quote.request_id, "quotedPrice", event.target.value)}
-                        disabled={converted || reviewBusy}
+                        disabled={converted || reviewBusy || merchantPriceLocked}
                       />
                     </div>
                     <div className="grid gap-1">
@@ -2226,6 +2234,22 @@ export function AdminShipmentManager({ mode = "shipments" }: { mode?: AdminShipm
                       COD {moneyFormatter.format(Number(shipment.cod_amount ?? 0))} · {shipment.cod_status ?? "PENDING"}
                     </div>
                   )}
+                  {shipment.business_account_id && Number(shipment.discount_amount ?? 0) > 0 ? (
+                    <div className="mt-3 grid gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs sm:grid-cols-3">
+                      <span>
+                        <span className="block uppercase tracking-[0.14em] text-muted-foreground">Standard price</span>
+                        <strong className="text-foreground">{moneyFormatter.format(Number(shipment.standard_price ?? shipment.payment_amount ?? 0))}</strong>
+                      </span>
+                      <span>
+                        <span className="block uppercase tracking-[0.14em] text-muted-foreground">Merchant discount</span>
+                        <strong className="text-emerald-500">-{moneyFormatter.format(Number(shipment.discount_amount ?? 0))}</strong>
+                      </span>
+                      <span>
+                        <span className="block uppercase tracking-[0.14em] text-muted-foreground">Final charged</span>
+                        <strong className="text-foreground">{moneyFormatter.format(Number(shipment.final_price ?? shipment.payment_amount ?? 0))}</strong>
+                      </span>
+                    </div>
+                  ) : null}
                   {String(shipment.delivery_category ?? shipment.shipment_type ?? "").includes("international") && (
                     <div className="mt-3 grid gap-2 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs sm:grid-cols-2 xl:grid-cols-4">
                       <span>

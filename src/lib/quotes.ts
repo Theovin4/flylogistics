@@ -80,8 +80,8 @@ export function canConvertQuote(status: string | null | undefined, paymentStatus
   return normalizeQuoteStatus(status) === "PAID" && String(paymentStatus ?? "UNPAID").toUpperCase() === "PAID";
 }
 
-export function quoteDisplayAmount(input: { quoted_price?: number | string | null; payment_amount?: number | string | null; estimated_price?: number | string | null }) {
-  const amount = Number(input.quoted_price ?? input.payment_amount ?? input.estimated_price ?? 0);
+export function quoteDisplayAmount(input: { final_price?: number | string | null; quoted_price?: number | string | null; payment_amount?: number | string | null; estimated_price?: number | string | null }) {
+  const amount = Number(input.final_price ?? input.quoted_price ?? input.payment_amount ?? input.estimated_price ?? 0);
   return Number.isFinite(amount) ? amount : 0;
 }
 

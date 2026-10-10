@@ -303,6 +303,36 @@ Private company workspace pages:
 - `/cloud/billing`
 - `/cloud/settings`
 
+### Tenant branding and public contact controls
+
+Fly Logistics Cloud resolves the authenticated company on the server before the
+workspace is rendered. The company name, logo, primary color, and contrast-aware
+foreground variables are therefore present on the first response rather than
+being applied after a client request.
+
+- Owners and company admins can manage branding from `/cloud/settings`.
+- Logo uploads accept PNG, JPEG, and WebP files up to 5 MB. File signatures are
+  verified server-side before upload, and assets are stored under the company's
+  isolated Cloudinary folder.
+- Replacing a logo is rollback-safe: the existing logo remains active until the
+  new upload and company update both succeed.
+- Public address, phone, WhatsApp, and support email are optional. They are shown
+  on tenant tracking only when the company enables the public-contact setting.
+- Tenant tracking resolves the company from the shipment record and only returns
+  the public-safe company projection. Owner, billing, team, carrier, and private
+  shipment data are not exposed.
+- Custom-domain and advanced branding capabilities are defined centrally in
+  `src/lib/cloud-plans.ts`; existing plan prices and limits are unchanged.
+
+Apply the focused additive migration before deploying these controls:
+
+```text
+supabase/migrations/20261004_cloud_white_label_contacts.sql
+```
+
+The migration is idempotent, enables RLS for the company branding fields, and
+adds the tenant indexes used by company membership and shipment views.
+
 New company signups start with `subscription_status = 'trialing'` and a 14-day `trial_ends_at`. Billing uses Flutterwave hosted checkout through server routes only. Configure optional Flutterwave recurring plan IDs in Vercel if you create matching payment plans in Flutterwave:
 
 ```bash

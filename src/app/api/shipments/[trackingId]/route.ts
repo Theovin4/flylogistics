@@ -19,7 +19,7 @@ import { whatsappMessages } from "@/lib/whatsapp";
 import { buildInternationalOperationsSummary } from "@/lib/international";
 import { deliveryCategoryValues, shipmentTypeFromDeliveryCategory } from "@/lib/pricing";
 import { carrierProviders } from "@/lib/carriers";
-import { requireRole } from "@/lib/request-auth";
+import { requireCompanyRole } from "@/server/tenancy";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
@@ -181,7 +181,10 @@ async function deleteRelatedShipmentRows(
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ trackingId: string }> }) {
   const { trackingId } = await params;
-  const access = await requireRole(request, ["admin", "dispatcher", "driver"]);
+  const limited = await enforceRateLimit(request, "shipment-update", { limit: 90, windowSeconds: 60 });
+  if (limited) return limited;
+
+  const access = await requireCompanyRole(request, ["owner", "admin", "dispatcher", "driver"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -203,7 +206,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ tr
     return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
   }
 
-  if (access.profile.role === "driver") {
+  if (access.profile.role === "driver" || access.tenant?.companyRole === "driver") {
     if (!access.profile.driver_id || String(current.data.driver_id ?? "") !== String(access.profile.driver_id)) {
       return NextResponse.json({ error: "This shipment is not assigned to your driver account." }, { status: 403 });
     }
@@ -277,11 +280,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ tr
   let verifiedDriverVehicleType: string | null = null;
 
   if (parsed.data.driverId) {
-    const driver = await supabase
+    let driverQuery = supabase
       .from("drivers")
       .select("id,approval_status,vehicle_type")
-      .eq("id", Number(parsed.data.driverId))
-      .maybeSingle();
+      .eq("id", Number(parsed.data.driverId));
+    if (tenant.schemaReady && tenant.companyId) {
+      driverQuery = driverQuery.eq("company_id", tenant.companyId);
+    }
+    const driver = await driverQuery.maybeSingle();
     if (driver.error) {
       logShipmentWorkflowError(driver.error, "Unable to verify assigned driver.", requestContext(request, { trackingId, driverId: parsed.data.driverId }));
       return NextResponse.json({ error: "Unable to verify assigned driver." }, { status: 500 });
@@ -551,7 +557,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ t
   if (limited) return limited;
 
   const { trackingId } = await params;
-  const access = await requireRole(request, ["admin"]);
+  const access = await requireCompanyRole(request, ["owner", "admin"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 

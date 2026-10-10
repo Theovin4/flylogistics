@@ -21,7 +21,6 @@ import { deliveryCategoryValues, shipmentTypeFromDeliveryCategory, type Delivery
 import { shipmentMarginPercent, shipmentProfit } from "@/lib/shipment-finance";
 import { makeTimelineEvent, shipmentWithDriverSelect, statusTimelineEvent } from "@/lib/shipment-data";
 import { whatsappMessages } from "@/lib/whatsapp";
-import { requireRole } from "@/lib/request-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { handleApiError, parseJson } from "@/server/api";
 import { notifyAdmin } from "@/server/admin-notifications";
@@ -37,8 +36,9 @@ import { sendCustomerNotification, smsMessages } from "@/server/notifications/se
 import { estimateShipmentEta } from "@/server/operations-intelligence";
 import { writeOperationalEvent } from "@/server/operational-events";
 import { calculateLogisticsPrice } from "@/server/pricing";
+import { calculateTenantRate } from "@/server/tenant-pricing";
 import { sendShipmentLifecycleEmail } from "@/server/shipment-emails";
-import { getTenantContextForProfile, withCompanyId } from "@/server/tenancy";
+import { getTenantContextForProfile, requireCompanyRole, withCompanyId } from "@/server/tenancy";
 
 const shipmentSchema = z.object({
   trackingId: z.string().trim().optional(),
@@ -228,7 +228,7 @@ async function insertShipmentWithSchemaFallback(
 }
 
 export async function GET(request: Request) {
-  const access = await requireRole(request, ["admin", "dispatcher"]);
+  const access = await requireCompanyRole(request, ["owner", "admin", "dispatcher"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -254,7 +254,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const access = await requireRole(request, ["admin", "dispatcher"]);
+    const access = await requireCompanyRole(request, ["owner", "admin", "dispatcher"]);
     if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
     if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -320,7 +320,17 @@ export async function POST(request: Request) {
     customsInformation: parsed.data.customsInformation,
     exportImportDocuments: parsed.data.exportImportDocuments
   }, supabase);
-  const paymentAmount = Number(pricingQuote.amount ?? 0);
+  const tenantRate = tenant.schemaReady && tenant.companyId && tenant.company?.slug !== "fly-logistics"
+    ? await calculateTenantRate(supabase, {
+        companyId: tenant.companyId,
+        serviceType: deliveryCategory,
+        pickupZone: parsed.data.pickupState ?? parsed.data.pickupCountry,
+        destinationZone: parsed.data.destinationState ?? parsed.data.destinationCountry,
+        weightKg: parsed.data.weightKg ?? 1
+      })
+    : null;
+  const effectivePrice = tenantRate?.amount ?? Number(pricingQuote.amount ?? 0);
+  const paymentAmount = Number(effectivePrice);
   const driverPayoutAmount = Number(parsed.data.driverPayoutAmount ?? 0);
   const carrierCostAmount = Number(parsed.data.carrierCostAmount ?? 0);
   const backdatedAt = validDateIso(parsed.data.backdatedAt);
@@ -414,8 +424,8 @@ export async function POST(request: Request) {
     driver_id: parsed.data.driverId ? Number(parsed.data.driverId) : null,
     current_lat: parsed.data.currentLat ?? null,
     current_lng: parsed.data.currentLng ?? null,
-    eta: parsed.data.eta || pricingQuote.etaLabel || etaEstimate.etaLabel,
-    eta_hours: pricingQuote.etaHours || etaEstimate.etaHours,
+    eta: parsed.data.eta || tenantRate?.etaLabel || pricingQuote.etaLabel || etaEstimate.etaLabel,
+    eta_hours: tenantRate?.etaHours || pricingQuote.etaHours || etaEstimate.etaHours,
     eta_confidence: etaEstimate.confidence,
     route_distance_km: etaEstimate.distanceKm,
     traffic_assumption: etaEstimate.trafficAssumption,

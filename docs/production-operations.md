@@ -190,6 +190,27 @@ This checklist is for running Fly Logistics as a real production freight platfor
 
 ## Release Checklist
 
+### Fly Logistics Cloud tenant branding
+
+- Apply `supabase/migrations/20261004_cloud_white_label_contacts.sql` and run
+  `npm run db:verify:supabase` before deployment.
+- Confirm each tenant workspace renders its stored name, logo, and primary color
+  on first paint after hard refresh and direct navigation.
+- Verify owner/admin users can upload, replace, and remove PNG, JPEG, or WebP
+  logos, while other roles receive an authorization error.
+- Verify public contact details remain hidden until the tenant explicitly enables
+  `show_contact_on_tracking`.
+- Verify tenant tracking uses the shipment's `company_id`, rejects mismatched
+  tenant slugs, hides proof-of-delivery and carrier data, and displays no more
+  than seven customer-safe timeline updates.
+- Confirm company A cannot read or modify company B branding, drivers, shipments,
+  rates, customers, or support data.
+- Keep `CLOUDINARY_API_SECRET` server-side. Tenant logo public IDs must remain
+  under `fly-logistics/company-media/{companyId}/logo`.
+- Set `BLOG_GROQ_MODEL` (or `GROQ_MODEL`) to a currently approved Groq model.
+  When it is absent, scheduled publishing records a controlled failure and does
+  not affect public pages or operations.
+
 - `npm run typecheck` passes.
 - `npm run lint` passes.
 - `npm run build` passes.

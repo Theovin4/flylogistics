@@ -195,6 +195,13 @@ export type ShipmentRecord = {
   package_image_url?: string | null;
   business_account_id?: number | string | null;
   business_reference?: string | null;
+  merchant_batch_id?: string | null;
+  standard_price?: number | string | null;
+  discountable_amount?: number | string | null;
+  discount_rate?: number | string | null;
+  discount_amount?: number | string | null;
+  final_price?: number | string | null;
+  pricing_rule_version?: string | null;
   cod_amount?: number | string | null;
   cod_status?: string | null;
   cod_collected_at?: string | null;
@@ -350,6 +357,12 @@ export type QuoteRequestRecord = {
   merchant_batch_id?: string | null;
   notes?: string | null;
   estimated_price: number;
+  standard_price?: number | string | null;
+  discountable_amount?: number | string | null;
+  discount_rate?: number | string | null;
+  discount_amount?: number | string | null;
+  final_price?: number | string | null;
+  pricing_rule_version?: string | null;
   estimated_eta_hours: number;
   quoted_price?: number | string | null;
   quoted_eta_hours?: number | string | null;

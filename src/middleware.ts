@@ -14,7 +14,6 @@ const noIndexPrefixes = [
   "/driver",
   "/fly-admin-ops",
   "/login",
-  "/merchant/dashboard",
   "/payment",
   "/register",
   "/rider"
@@ -27,13 +26,18 @@ const privateCloudPrefixes = [
   "/cloud/dashboard",
   "/cloud/drivers",
   "/cloud/login",
+  "/cloud/operations",
+  "/cloud/rates",
   "/cloud/settings",
   "/cloud/shipments",
-  "/cloud/signup"
+  "/cloud/signup",
+  "/cloud/support",
+  "/cloud/team"
 ] as const;
 
 function isNoIndexRoute(pathname: string) {
   return (
+    pathname.startsWith("/merchant/") ||
     noIndexPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ||
     privateCloudPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
   );
@@ -66,6 +70,7 @@ function protectedRoles(pathname: string): FlyRole[] | null {
     pathname === "/customer/forgot-password" ||
     pathname === "/customer/reset-password"
   ) return null;
+  if (pathname === "/merchant" || pathname === "/merchant/login" || pathname === "/merchant/register") return null;
   if (
     pathname === "/driver/login" ||
     pathname === "/driver/register" ||
@@ -79,10 +84,11 @@ function protectedRoles(pathname: string): FlyRole[] | null {
     pathname === "/cloud/features" ||
     pathname === "/cloud/demo" ||
     pathname === "/cloud/login" ||
-    pathname === "/cloud/signup"
+    pathname === "/cloud/signup" ||
+    pathname.startsWith("/cloud/portal/")
   ) return null;
   if (pathname.startsWith("/cloud")) return [...flyRoles];
-  if (pathname.startsWith("/merchant/dashboard")) return ["customer"];
+  if (pathname.startsWith("/merchant")) return ["customer"];
   if (pathname.startsWith("/customer")) return ["customer"];
   if (pathname.startsWith("/driver")) return ["driver"];
   if (pathname.startsWith("/dispatcher")) return ["dispatcher"];
@@ -92,7 +98,7 @@ function protectedRoles(pathname: string): FlyRole[] | null {
 
 function loginPathFor(pathname: string) {
   if (pathname.startsWith("/customer")) return "/customer/login";
-  if (pathname.startsWith("/merchant/dashboard")) return "/customer/login";
+  if (pathname.startsWith("/merchant")) return "/merchant/login";
   if (pathname.startsWith("/dashboard/customer")) return "/customer/login";
   if (pathname.startsWith("/driver") || pathname.startsWith("/dashboard/driver")) return "/driver/login";
   if (pathname.startsWith("/dispatcher") || pathname.startsWith("/dashboard/dispatcher")) return "/dispatcher/login";

@@ -53,7 +53,7 @@ test("public mutation APIs retain validation and throttling", () => {
   for (const route of ["src/app/api/quote/route.ts", "src/app/api/quote-requests/route.ts"]) {
     const source = read(route);
     assert.match(source, /enforceRateLimit\(/, `${route} has no rate limit`);
-    assert.match(source, /z\.object\(|safeParse|\.parse\(/, `${route} has no schema validation`);
+    assert.match(source, /z\.object\(|safeParse|\.parse\(|customerBookingSchema/, `${route} has no schema validation`);
   }
 });
 
@@ -88,4 +88,173 @@ test("customer-facing tracking uses concise Fly-only milestones", () => {
   assert.match(customerOverview, /timeline: publicShipmentTimeline\(shipment\)/);
   assert.match(read("src/lib/tracking-status.ts"), /delivery\\s\+partner/);
   assert.doesNotMatch(read("src/lib/tracking-status.ts"), /Delivery partner assigned/);
+});
+
+test("cloud operations enforce company roles and tenant row filters", () => {
+  const tenantRoutes = [
+    "src/app/api/cloud/customers/route.ts",
+    "src/app/api/cloud/team/route.ts",
+    "src/app/api/cloud/rates/route.ts",
+    "src/app/api/cloud/analytics/route.ts"
+  ];
+  for (const route of tenantRoutes) {
+    const source = read(route);
+    assert.match(source, /requireCompanyRole\(/, `${route} has no company role check`);
+    assert.match(source, /companyId|company_id/, `${route} has no company scope`);
+  }
+  for (const route of ["src/app/api/shipments/route.ts", "src/app/api/drivers/route.ts"]) {
+    assert.match(read(route), /requireCompanyRole\(/, `${route} does not support protected Cloud company roles`);
+  }
+
+  const shipmentUpdate = read("src/app/api/shipments/[trackingId]/route.ts");
+  assert.match(shipmentUpdate, /driverQuery\s*=\s*driverQuery\.eq\("company_id",\s*tenant\.companyId\)/, "Driver assignment is not company-scoped");
+  assert.match(shipmentUpdate, /enforceRateLimit\(request,\s*"shipment-update"/, "Shipment updates are not rate limited");
+  assert.equal(existsSync(join(root, "src/app/cloud/operations/page.tsx")), true, "Cloud operations page is missing");
+  assert.match(read("src/components/cloud/cloud-operations-workspace.tsx"), /export function CloudDispatchWorkspace/);
+});
+
+test("private Cloud workspaces are noindex and private-cache protected", () => {
+  const middleware = read("src/middleware.ts");
+  const layout = read("src/app/layout.tsx");
+  for (const route of ["/cloud/operations", "/cloud/rates", "/cloud/support", "/cloud/team"]) {
+    assert.match(middleware, new RegExp(route.replaceAll("/", "\\/")), `${route} is missing from private Cloud prefixes`);
+    assert.match(layout, new RegExp(route.replaceAll("/", "\\/")), `${route} is missing from private analytics exclusions`);
+  }
+});
+
+test("cloud public tracking is tenant-scoped and customer-safe", () => {
+  const portal = read("src/app/api/cloud/portal/[tenantSlug]/tracking/[trackingId]/route.ts");
+  assert.match(portal, /shipmentIdentity/);
+  assert.match(portal, /getPublicTenantProfileById/);
+  assert.match(portal, /company\.profile\.slug !== slug\.data/);
+  assert.match(portal, /company_id/);
+  assert.match(portal, /normalizeShipment/);
+  assert.match(portal, /includeProof:\s*false/);
+  assert.match(portal, /publicTracking:\s*true/);
+  assert.doesNotMatch(portal, /proof_of_delivery_url/);
+  assert.doesNotMatch(portal, /carrier_order_no/);
+});
+
+test("cloud branding is resolved before workspace hydration", () => {
+  const layout = read("src/app/cloud/layout.tsx");
+  const provider = read("src/components/cloud/cloud-tenant-context.tsx");
+  const dashboard = read("src/components/cloud/cloud-dashboard.tsx");
+  assert.match(layout, /resolveFreshProfileFromAccessToken/);
+  assert.match(layout, /getTenantContextForProfile/);
+  assert.match(layout, /CloudTenantProvider company=\{company\}/);
+  assert.match(provider, /tenantCssVariables\(company\)/);
+  assert.match(provider, /data-cloud-tenant/);
+  assert.doesNotMatch(dashboard, /style=\{company\?\.brand_color/);
+});
+
+test("cloud brand assets are tenant-authorized and content validated", () => {
+  const upload = read("src/app/api/cloud/branding/logo/route.ts");
+  assert.match(upload, /requireCompanyRole\(request, \["owner", "admin"\]\)/);
+  assert.match(upload, /MAX_LOGO_BYTES = 5_000_000/);
+  assert.match(upload, /detectedFormat/);
+  assert.match(upload, /company-media\/\$\{companyId\}\/logo/);
+  assert.doesNotMatch(upload, /paramsToSign/);
+});
+
+test("cloud public contacts expose only explicit safe tenant fields", () => {
+  const profile = read("src/server/public-tenant-profile.ts");
+  const branding = read("src/lib/tenant-branding.ts");
+  assert.match(profile, /PUBLIC_TENANT_SELECT/);
+  for (const field of ["public_address", "public_phone", "public_whatsapp", "public_support_email", "show_contact_on_tracking"]) assert.match(profile, new RegExp(field));
+  for (const forbidden of ["billing_email", "flutterwave", "subscription_plan", "owner", "user_id"]) assert.doesNotMatch(profile, new RegExp(forbidden));
+  assert.match(branding, /https:\/\/wa\.me\/\$\{phone\}/);
+  assert.match(branding, /encodeURIComponent\(message\)/);
+});
+
+test("whatsapp verification remains strict while blog model is environment-driven", () => {
+  const whatsapp = read("src/app/api/webhooks/whatsapp/route.ts");
+  const blog = read("src/server/blog-publisher.ts");
+  assert.match(whatsapp, /mode === "subscribe"/);
+  assert.match(whatsapp, /safeTimingEqual\(verifyToken, configuredToken\)/);
+  assert.match(whatsapp, /new Response\("Forbidden", \{ status: 403 \}\)/);
+  assert.match(blog, /BLOG_GROQ_MODEL/);
+  assert.match(blog, /GROQ_MODEL/);
+  assert.doesNotMatch(blog, /model:\s*cleanEnv\([^\n]+\) \?\? "llama-3\.3-70b-versatile"/);
+});
+
+test("merchant portal has dedicated authentication, onboarding, and protected workspaces", () => {
+  for (const route of [
+    "src/app/merchant/login/page.tsx",
+    "src/app/merchant/register/page.tsx",
+    "src/app/merchant/onboarding/page.tsx",
+    "src/app/merchant/dashboard/page.tsx",
+    "src/app/merchant/shipments/page.tsx",
+    "src/app/merchant/shipments/bulk/page.tsx"
+  ]) assert.equal(existsSync(join(root, route)), true, `${route} is missing`);
+
+  const middleware = read("src/middleware.ts");
+  assert.match(middleware, /pathname\.startsWith\("\/merchant\/"\)/);
+  assert.match(middleware, /if \(pathname\.startsWith\("\/merchant"\)\) return \["customer"\]/);
+  assert.match(read("src/components/merchant/merchant-gate.tsx"), /\/api\/merchant\/access/);
+  assert.doesNotMatch(read("src/app/merchant/page.tsx"), /\/customer\/(?:login|register)/);
+});
+
+test("merchant pricing is server-side, fixed at five percent, and persisted once", () => {
+  const pricing = read("src/server/merchant-pricing.ts");
+  const merchantApi = read("src/app/api/merchant/overview/route.ts");
+  const quoteWorkflow = read("src/server/quote-workflow.ts");
+  const shipmentConversion = read("src/server/quote-to-shipment.ts");
+  const manualShipmentConversion = read("src/app/api/quote-requests/[requestId]/convert/route.ts");
+
+  assert.match(pricing, /MERCHANT_DEFAULT_DISCOUNT_RATE = 0\.05/);
+  assert.match(pricing, /normalizedStandard - discountAmount/);
+  assert.match(pricing, /status.*ACTIVE/);
+  assert.match(merchantApi, /calculateLogisticsPrice/);
+  assert.match(merchantApi, /resolveMerchantPrice\(quote\.amount, account\.data\)/);
+  for (const field of ["standard_price", "discountable_amount", "discount_rate", "discount_amount", "final_price", "pricing_rule_version"]) {
+    assert.match(merchantApi, new RegExp(field), `merchant quote does not persist ${field}`);
+    assert.match(shipmentConversion, new RegExp(field), `shipment conversion does not retain ${field}`);
+    assert.match(manualShipmentConversion, new RegExp(field), `manual shipment conversion does not retain ${field}`);
+  }
+  assert.match(quoteWorkflow, /quote\.final_price \?\? quote\.quoted_price/);
+  assert.doesNotMatch(read("src/app/api/quote/route.ts"), /resolveMerchantPrice/);
+  assert.doesNotMatch(read("src/app/api/cloud/rates/route.ts"), /resolveMerchantPrice/);
+});
+
+test("merchant recipient data is isolated with row level security", () => {
+  const migration = read("supabase/migrations/20260930_merchant_portal_foundation.sql");
+  assert.match(migration, /alter table public\.merchant_recipients enable row level security/);
+  assert.match(migration, /business_account_members/);
+  assert.match(migration, /member\.user_id = \(select auth\.uid\(\)\)/);
+  assert.match(migration, /revoke all on table public\.merchant_recipients from anon/);
+});
+
+test("customer booking separates instant local pricing from reviewed international requests", () => {
+  const workspace = read("src/components/customer/customer-booking-workspace.tsx");
+  const quoteRoute = read("src/app/api/quote-requests/route.ts");
+  const bookingSchema = read("src/lib/customer-booking.ts");
+
+  for (const mode of ["local_nigeria", "international_import", "international_export"]) {
+    assert.match(workspace, new RegExp(mode), `booking workspace is missing ${mode}`);
+    assert.match(bookingSchema, new RegExp(mode), `booking schema is missing ${mode}`);
+  }
+  assert.match(workspace, /Submit for final review/);
+  assert.match(workspace, /\/api\/pricing\/quote/);
+  assert.match(quoteRoute, /internationalReview \? "PENDING_REVIEW" : "QUOTED"/);
+  assert.match(quoteRoute, /requiresReview: internationalReview/);
+  assert.match(bookingSchema, /Local deliveries must start and end in Nigeria/);
+});
+
+test("customer booking supports saved addresses and scoped international documents", () => {
+  const dashboard = read("src/components/customer/customer-dashboard.tsx");
+  const workspace = read("src/components/customer/customer-booking-workspace.tsx");
+  const cloudSign = read("src/app/api/cloudinary/sign/route.ts");
+
+  assert.match(dashboard, /addresses=\{overview\?\.addresses \?\? \[\]\}/);
+  assert.match(workspace, /<SavedAddress kind="pickup" \/>/);
+  assert.match(workspace, /fly-logistics\/packages\/international-documents/);
+  assert.match(workspace, /acceptDocuments/);
+  assert.match(cloudSign, /\["admin", "dispatcher", "driver", "customer"\]/);
+  assert.match(cloudSign, /isInternationalDocument && resourceType === "raw"/);
+});
+
+test("customer self-registration does not request or persist a company", () => {
+  const access = read("src/components/auth/role-access-form.tsx");
+  assert.match(access, /role !== "customer"/);
+  assert.match(access, /signupRole === "customer" \? undefined : form\.company/);
 });

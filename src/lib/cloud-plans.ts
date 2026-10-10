@@ -1,4 +1,5 @@
 export type CloudBillingPlan = "starter" | "growth" | "scale";
+export type CloudBrandCapability = "basic_branding" | "advanced_branding" | "email_branding" | "custom_domain" | "remove_platform_branding";
 
 export const CLOUD_TRIAL_DAYS = 14;
 
@@ -84,4 +85,14 @@ export function cloudLimitLabel(limit: number | null, noun: string) {
 
 export function isCloudPlanLimitReached(currentCount: number, limit: number | null) {
   return limit !== null && currentCount >= limit;
+}
+
+const cloudBrandCapabilities: Record<CloudBillingPlan, ReadonlySet<CloudBrandCapability>> = {
+  starter: new Set(["basic_branding"]),
+  growth: new Set(["basic_branding", "advanced_branding", "email_branding"]),
+  scale: new Set(["basic_branding", "advanced_branding", "email_branding", "custom_domain", "remove_platform_branding"])
+};
+
+export function cloudPlanCan(plan: string | null | undefined, capability: CloudBrandCapability) {
+  return cloudBrandCapabilities[getCloudBillingPlanKey(plan)].has(capability);
 }

@@ -43,9 +43,10 @@ type CloudinaryUploadProps = {
   description?: string;
   variant?: "button" | "panel";
   onUploaded?: (asset: UploadedAsset) => Promise<void> | void;
+  acceptDocuments?: boolean;
 };
 
-export function CloudinaryUpload({ folder, label, description, variant = "button", onUploaded }: CloudinaryUploadProps) {
+export function CloudinaryUpload({ folder, label, description, variant = "button", onUploaded, acceptDocuments = false }: CloudinaryUploadProps) {
   const [state, setState] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<CloudinaryUploadRuntimeConfig | null>(null);
@@ -123,10 +124,10 @@ export function CloudinaryUpload({ folder, label, description, variant = "button
       options={{
         folder,
         multiple: false,
-        maxFileSize: 5_000_000,
-        resourceType: "image",
-        clientAllowedFormats: ["jpg", "jpeg", "png", "webp"],
-        sources: ["local", "camera"],
+        maxFileSize: acceptDocuments ? 10_000_000 : 5_000_000,
+        resourceType: acceptDocuments ? "raw" : "image",
+        clientAllowedFormats: acceptDocuments ? ["pdf", "jpg", "jpeg", "png", "webp"] : ["jpg", "jpeg", "png", "webp"],
+        sources: acceptDocuments ? ["local"] : ["local", "camera"],
         styles: {
           palette: {
             window: "#090b12",
@@ -149,7 +150,7 @@ export function CloudinaryUpload({ folder, label, description, variant = "button
         const asset = getUploadedAsset(results);
         if (!asset) {
           setState("error");
-          setMessage("Upload finished without a usable image URL.");
+          setMessage("Upload finished without a usable file URL.");
           return;
         }
         setState("saving");
@@ -167,7 +168,7 @@ export function CloudinaryUpload({ folder, label, description, variant = "button
       onError={(error) => {
         console.error(error);
         setState("error");
-        setMessage("Upload failed. Try a JPG, PNG, or WebP under 5 MB.");
+        setMessage(acceptDocuments ? "Upload failed. Try a PDF, JPG, PNG, or WebP under 10 MB." : "Upload failed. Try a JPG, PNG, or WebP under 5 MB.");
       }}
     >
       {({ open, isLoading }) => {

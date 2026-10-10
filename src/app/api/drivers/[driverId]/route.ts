@@ -7,14 +7,13 @@ import {
   normalizeTransportationType,
   optionalDriverColumns
 } from "@/lib/driver-data";
-import { requireRole } from "@/lib/request-auth";
 import { normalizeShipmentStatus } from "@/lib/shipments";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
 import { logApiError, requestContext } from "@/server/monitoring";
 import { writeOperationalEvent } from "@/server/operational-events";
-import { getTenantContextForProfile } from "@/server/tenancy";
+import { getTenantContextForProfile, requireCompanyRole } from "@/server/tenancy";
 
 type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 
@@ -94,7 +93,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ dr
   if (limited) return limited;
 
   const { driverId } = await params;
-  const access = await requireRole(request, ["admin"]);
+  const access = await requireCompanyRole(request, ["owner", "admin"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -191,7 +190,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ d
   if (limited) return limited;
 
   const { driverId } = await params;
-  const access = await requireRole(request, ["admin"]);
+  const access = await requireCompanyRole(request, ["owner", "admin"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 

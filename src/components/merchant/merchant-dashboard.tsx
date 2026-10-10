@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import type { Route as NextRoute } from "next";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -16,6 +17,7 @@ import {
   PackagePlus,
   Plus,
   RefreshCw,
+  Route,
   Save,
   ShieldCheck,
   Truck,
@@ -38,7 +40,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { quoteDisplayAmount, quoteLifecycleTone, quoteStatusLabel } from "@/lib/quotes";
 import type { QuoteRequestRecord, ShipmentRecord } from "@/lib/shipments";
 
-type MerchantSection = "overview" | "bulk" | "shipments" | "wallet" | "team" | "addresses" | "invoices" | "analytics" | "support" | "security";
+export type MerchantSection = "overview" | "bulk" | "shipments" | "recipients" | "wallet" | "team" | "addresses" | "invoices" | "analytics" | "support" | "security";
 
 type MerchantOverview = {
   profile: {
@@ -54,6 +56,7 @@ type MerchantOverview = {
   team: BusinessMember[];
   quoteRequests: QuoteRequestRecord[];
   shipments: ShipmentRecord[];
+  recipients: MerchantRecipient[];
   addresses: MerchantAddress[];
   wallet: CustomerWalletView;
   walletTransactions: WalletTransactionView[];
@@ -103,6 +106,18 @@ type MerchantAddress = {
   notes?: string | null;
 };
 
+type MerchantRecipient = {
+  id: number | string;
+  name: string;
+  phone: string;
+  email?: string | null;
+  address: string;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  notes?: string | null;
+};
+
 type MerchantInvoice = {
   id: number | string;
   invoice_number: string;
@@ -134,6 +149,17 @@ type BulkRow = {
 
 type PreviewRow = BulkRow & { rowNumber: number; errors: string[] };
 
+type BulkPricePreview = {
+  rowNumber: number;
+  standardPrice: number;
+  discountRate: number;
+  discountAmount: number;
+  finalPrice: number;
+  etaLabel: string;
+  serviceAvailable: boolean;
+  warnings: string[];
+};
+
 const initialBusinessForm = {
   accountName: "",
   contactName: "",
@@ -156,6 +182,17 @@ const initialAddressForm = {
   isDefault: false
 };
 
+const initialRecipientForm = {
+  name: "",
+  phone: "",
+  email: "",
+  address: "",
+  city: "",
+  state: "",
+  country: "Nigeria",
+  notes: ""
+};
+
 const moneyFormatter = new Intl.NumberFormat("en-NG", {
   currency: "NGN",
   maximumFractionDigits: 0,
@@ -166,6 +203,7 @@ const navItems: Array<{ section: MerchantSection; label: string; icon: LucideIco
   { section: "overview", label: "Overview", icon: Building2 },
   { section: "bulk", label: "Bulk upload", icon: Upload },
   { section: "shipments", label: "Shipments", icon: Truck },
+  { section: "recipients", label: "Recipients", icon: Route },
   { section: "wallet", label: "Wallet", icon: Wallet },
   { section: "team", label: "Team", icon: Users },
   { section: "addresses", label: "Addresses", icon: MapPin },
@@ -174,6 +212,20 @@ const navItems: Array<{ section: MerchantSection; label: string; icon: LucideIco
   { section: "support", label: "Support", icon: Headphones },
   { section: "security", label: "Security", icon: ShieldCheck }
 ];
+
+const sectionRoutes: Record<MerchantSection, string> = {
+  overview: "/merchant/dashboard",
+  bulk: "/merchant/shipments/bulk",
+  shipments: "/merchant/shipments",
+  recipients: "/merchant/recipients",
+  wallet: "/merchant/wallet",
+  team: "/merchant/team",
+  addresses: "/merchant/settings#merchant-addresses",
+  invoices: "/merchant/invoices",
+  analytics: "/merchant/analytics",
+  support: "/merchant/support",
+  security: "/merchant/settings"
+};
 
 function sectionFromHash(hash: string): MerchantSection {
   const value = hash.replace("#merchant-", "");
@@ -239,10 +291,18 @@ function headerToField(header: string): keyof BulkRow | null {
 
 function validateBulkRow(row: BulkRow, rowNumber: number): PreviewRow {
   const errors = [
+    row.customerName ? null : "Sender name is required",
+    row.recipientName ? null : "Recipient name is required",
+    row.pickupPhone && row.pickupPhone.replace(/\D/g, "").length >= 10 ? null : "Sender phone is required",
+    row.deliveryPhone && row.deliveryPhone.replace(/\D/g, "").length >= 10 ? null : "Recipient phone is required",
+    row.pickupState ? null : "Pickup state is required",
+    row.destinationState ? null : "Destination state is required",
     row.pickupAddress ? null : "Pickup address is required",
     row.deliveryAddress ? null : "Delivery address is required",
     row.packageType ? null : "Package type is required",
-    Number(row.weightKg) > 0 ? null : "Weight must be above 0"
+    Number(row.weightKg) > 0 ? null : "Weight must be above 0",
+    row.deliveryCategory !== "international_import" || row.pickupCountry ? null : "Origin country is required",
+    row.deliveryCategory !== "international_export" || row.destinationCountry ? null : "Destination country is required"
   ].filter(Boolean) as string[];
   return { ...row, rowNumber, errors };
 }
@@ -289,14 +349,16 @@ function statusClass(status?: string | null) {
   return "border-primary/40 bg-primary/10 text-primary";
 }
 
-export function MerchantDashboard() {
+export function MerchantDashboard({ initialSection = "overview" }: { initialSection?: MerchantSection }) {
   const [overview, setOverview] = useState<MerchantOverview | null>(null);
-  const [activeSection, setActiveSection] = useState<MerchantSection>("overview");
+  const [activeSection, setActiveSection] = useState<MerchantSection>(initialSection);
   const [businessForm, setBusinessForm] = useState(initialBusinessForm);
   const [addressForm, setAddressForm] = useState(initialAddressForm);
+  const [recipientForm, setRecipientForm] = useState(initialRecipientForm);
   const [teamEmail, setTeamEmail] = useState("");
   const [teamRole, setTeamRole] = useState("member");
   const [csvRows, setCsvRows] = useState<PreviewRow[]>([]);
+  const [bulkPricePreviews, setBulkPricePreviews] = useState<BulkPricePreview[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -310,6 +372,14 @@ export function MerchantDashboard() {
     [overview?.quoteRequests]
   );
   const validRows = useMemo(() => csvRows.filter((row) => row.errors.length === 0), [csvRows]);
+  const bulkPreviewTotals = useMemo(() => bulkPricePreviews.reduce((total, item) => ({
+    standardPrice: total.standardPrice + item.standardPrice,
+    discountAmount: total.discountAmount + item.discountAmount,
+    finalPrice: total.finalPrice + item.finalPrice
+  }), { standardPrice: 0, discountAmount: 0, finalPrice: 0 }), [bulkPricePreviews]);
+  const bulkPreviewByCsvRow = useMemo(() => new Map(
+    validRows.map((row, index) => [row.rowNumber, bulkPricePreviews[index]])
+  ), [bulkPricePreviews, validRows]);
 
   const authHeaders = useCallback(async () => {
     const supabase = getSupabaseBrowser();
@@ -346,11 +416,11 @@ export function MerchantDashboard() {
   }, [loadOverview]);
 
   useEffect(() => {
-    const syncHash = () => setActiveSection(sectionFromHash(window.location.hash));
+    const syncHash = () => setActiveSection(window.location.hash ? sectionFromHash(window.location.hash) : initialSection);
     syncHash();
     window.addEventListener("hashchange", syncHash);
     return () => window.removeEventListener("hashchange", syncHash);
-  }, []);
+  }, [initialSection]);
 
   async function postMerchant(body: Record<string, unknown>, success: string) {
     setBusy(String(body.action ?? "merchant"));
@@ -404,17 +474,24 @@ export function MerchantDashboard() {
     if (data) setAddressForm(initialAddressForm);
   }
 
+  async function saveRecipient(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accountId) return;
+    const data = await postMerchant({ action: "save_recipient", accountId, ...recipientForm }, "Recipient saved.");
+    if (data) setRecipientForm(initialRecipientForm);
+  }
+
   async function handleCsvFile(file: File | null) {
     if (!file) return;
     const text = await file.text();
     const parsed = parseCsv(text);
     setCsvRows(parsed);
+    setBulkPricePreviews([]);
     if (parsed.length) flyInfo("CSV ready for review", `${parsed.length} shipment rows loaded.`);
   }
 
-  async function createBulkQuotes() {
-    if (!accountId || validRows.length === 0) return;
-    const rows = validRows.map((row) => ({
+  function bulkPayloadRows() {
+    return validRows.map((row) => ({
       businessReference: row.businessReference,
       customerName: row.customerName,
       deliveryAddress: row.deliveryAddress,
@@ -432,8 +509,39 @@ export function MerchantDashboard() {
       urgency: row.urgency,
       weightKg: Number(row.weightKg)
     }));
+  }
+
+  async function previewBulkQuotes() {
+    if (!accountId || validRows.length === 0) return;
+    setBusy("preview_bulk_quotes");
+    setError(null);
+    try {
+      const response = await authorizedFetch("/api/merchant/overview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "preview_bulk_quotes", accountId, rows: bulkPayloadRows() })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to preview merchant prices.");
+      setBulkPricePreviews(data.previews ?? []);
+      flySuccess("Business prices ready", "Review the standard price, 5% saving, and final total before confirming.");
+    } catch (err) {
+      const nextError = err instanceof Error ? err.message : "Unable to preview merchant prices.";
+      setError(nextError);
+      flyError("Unable to preview prices", nextError);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function createBulkQuotes() {
+    if (!accountId || validRows.length === 0) return;
+    const rows = bulkPayloadRows();
     const data = await postMerchant({ action: "bulk_create_quotes", accountId, rows }, `${rows.length} shipment quote${rows.length === 1 ? "" : "s"} created.`);
-    if (data) setCsvRows([]);
+    if (data) {
+      setCsvRows([]);
+      setBulkPricePreviews([]);
+    }
   }
 
   async function fundWallet(amount: number, paymentProvider: WalletFundingProvider = "flutterwave", network = "TRC20") {
@@ -541,7 +649,7 @@ export function MerchantDashboard() {
           {navItems.map((item) => (
             <Link
               key={item.section}
-              href={`#merchant-${item.section}`}
+              href={sectionRoutes[item.section] as NextRoute}
               className={`inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition ${activeSection === item.section ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
             >
               <item.icon className="size-4" />
@@ -633,11 +741,24 @@ export function MerchantDashboard() {
                 <div className="grid gap-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-muted-foreground">{validRows.length} valid of {csvRows.length} rows</p>
-                    <Button onClick={() => void createBulkQuotes()} disabled={!accountId || validRows.length === 0 || busy === "bulk_create_quotes"}>
-                      {busy === "bulk_create_quotes" ? <Loader2 className="animate-spin" /> : <PackagePlus />}
-                      Create shipment quotes
-                    </Button>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button variant="outline" onClick={() => void previewBulkQuotes()} disabled={!accountId || validRows.length === 0 || Boolean(busy)}>
+                        {busy === "preview_bulk_quotes" ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                        Preview delivery prices
+                      </Button>
+                      <Button onClick={() => void createBulkQuotes()} disabled={!accountId || validRows.length === 0 || bulkPricePreviews.length !== validRows.length || Boolean(busy)}>
+                        {busy === "bulk_create_quotes" ? <Loader2 className="animate-spin" /> : <PackagePlus />}
+                        Confirm shipment quotes
+                      </Button>
+                    </div>
                   </div>
+                  {bulkPricePreviews.length === validRows.length ? (
+                    <div className="grid gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm sm:grid-cols-3">
+                      <span>Standard total <strong className="block text-foreground">{moneyFormatter.format(bulkPreviewTotals.standardPrice)}</strong></span>
+                      <span className="text-emerald-500">Merchant savings (5%) <strong className="block">-{moneyFormatter.format(bulkPreviewTotals.discountAmount)}</strong></span>
+                      <span>Final total <strong className="block text-foreground">{moneyFormatter.format(bulkPreviewTotals.finalPrice)}</strong></span>
+                    </div>
+                  ) : null}
                   <div className="overflow-x-auto rounded-md border">
                     <table className="w-full min-w-[860px] text-left text-sm">
                       <thead className="bg-muted/40 text-xs uppercase tracking-[0.16em] text-muted-foreground">
@@ -647,6 +768,7 @@ export function MerchantDashboard() {
                           <th className="p-3">Delivery</th>
                           <th className="p-3">Package</th>
                           <th className="p-3">Weight</th>
+                          <th className="p-3">Business price</th>
                           <th className="p-3">Status</th>
                         </tr>
                       </thead>
@@ -658,6 +780,15 @@ export function MerchantDashboard() {
                             <td className="p-3">{row.deliveryAddress}</td>
                             <td className="p-3">{row.packageType}</td>
                             <td className="p-3">{row.weightKg}kg</td>
+                            <td className="p-3">
+                              {bulkPreviewByCsvRow.get(row.rowNumber) ? (
+                                <span className="grid gap-1">
+                                  <span className="text-xs text-muted-foreground line-through">{moneyFormatter.format(bulkPreviewByCsvRow.get(row.rowNumber)!.standardPrice)}</span>
+                                  <strong>{moneyFormatter.format(bulkPreviewByCsvRow.get(row.rowNumber)!.finalPrice)}</strong>
+                                  <span className="text-xs text-emerald-500">Save {moneyFormatter.format(bulkPreviewByCsvRow.get(row.rowNumber)!.discountAmount)}</span>
+                                </span>
+                              ) : <span className="text-muted-foreground">Preview required</span>}
+                            </td>
                             <td className="p-3">
                               {row.errors.length ? <Badge className="border-destructive/40 bg-destructive/10 text-destructive">{row.errors.join(", ")}</Badge> : <Badge className="border-emerald-500/40 bg-emerald-500/10 text-emerald-500">Ready</Badge>}
                             </td>
@@ -731,6 +862,13 @@ export function MerchantDashboard() {
                   <span>
                     <span className="block font-mono font-semibold">{quote.request_id}</span>
                     <span className="mt-1 block text-sm text-muted-foreground">{quote.pickup_address} to {quote.delivery_address}</span>
+                    {Number(quote.discount_amount ?? 0) > 0 ? (
+                      <span className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-3">
+                        <span>Standard {moneyFormatter.format(Number(quote.standard_price ?? quoteDisplayAmount(quote)))}</span>
+                        <span className="text-emerald-500">Business saving -{moneyFormatter.format(Number(quote.discount_amount ?? 0))}</span>
+                        <span className="font-semibold text-foreground">Final {moneyFormatter.format(Number(quote.final_price ?? quoteDisplayAmount(quote)))}</span>
+                      </span>
+                    ) : null}
                   </span>
                   <span className="flex flex-wrap items-center gap-2">
                     <Badge className={quoteLifecycleTone(quote.status)}>{quoteStatusLabel(quote.status)}</Badge>
@@ -739,6 +877,50 @@ export function MerchantDashboard() {
                   </span>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+        </section>
+
+        <section className={`grid gap-4 lg:grid-cols-[0.85fr_1.15fr] ${activeSection === "recipients" ? "" : "hidden"}`}>
+          <Card className="glass">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Route className="size-5 text-primary" />Save recipient</CardTitle>
+              <p className="text-sm text-muted-foreground">Keep frequently used delivery contacts ready for future shipment batches.</p>
+            </CardHeader>
+            <CardContent>
+              <form className="grid gap-3" onSubmit={saveRecipient}>
+                <Input value={recipientForm.name} onChange={(event) => setRecipientForm((current) => ({ ...current, name: event.target.value }))} placeholder="Recipient name" required />
+                <Input type="tel" inputMode="tel" value={recipientForm.phone} onChange={(event) => setRecipientForm((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone number" required />
+                <Input type="email" inputMode="email" value={recipientForm.email} onChange={(event) => setRecipientForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email (optional)" />
+                <Input value={recipientForm.address} onChange={(event) => setRecipientForm((current) => ({ ...current, address: event.target.value }))} placeholder="Full delivery address" required />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input value={recipientForm.city} onChange={(event) => setRecipientForm((current) => ({ ...current, city: event.target.value }))} placeholder="City / LGA" required />
+                  <Input value={recipientForm.state} onChange={(event) => setRecipientForm((current) => ({ ...current, state: event.target.value }))} placeholder="State" required />
+                </div>
+                <Input value={recipientForm.country} onChange={(event) => setRecipientForm((current) => ({ ...current, country: event.target.value }))} placeholder="Country" required />
+                <Button disabled={!accountId || busy === "save_recipient"}>
+                  {busy === "save_recipient" ? <Loader2 className="animate-spin" /> : <Save />}
+                  Save recipient
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+          <Card className="glass">
+            <CardHeader><CardTitle>Saved recipients</CardTitle></CardHeader>
+            <CardContent className="grid gap-2">
+              {(overview?.recipients ?? []).map((recipient) => (
+                <div key={recipient.id} className="rounded-md border bg-background/35 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <span>
+                      <span className="block font-semibold">{recipient.name}</span>
+                      <span className="text-sm text-muted-foreground">{recipient.phone}{recipient.email ? ` · ${recipient.email}` : ""}</span>
+                    </span>
+                    <Badge>{recipient.country ?? "Nigeria"}</Badge>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">{recipient.address}{recipient.city ? `, ${recipient.city}` : ""}{recipient.state ? `, ${recipient.state}` : ""}</p>
+                </div>
+              ))}
+              {(overview?.recipients ?? []).length === 0 ? <p className="text-sm text-muted-foreground">No recipients saved yet.</p> : null}
             </CardContent>
           </Card>
         </section>

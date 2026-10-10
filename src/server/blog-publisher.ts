@@ -118,9 +118,11 @@ function containsInternalBranding(post: BlogPost) {
 async function generatePost(topic: string, sourceDate: string): Promise<BlogPost> {
   const groq = getGroq();
   if (!groq) throw new Error("GROQ_API_KEY is not configured for scheduled blog publishing.");
+  const model = cleanEnv(process.env.BLOG_GROQ_MODEL) ?? cleanEnv(process.env.GROQ_MODEL);
+  if (!model) throw new Error("BLOG_GROQ_MODEL or GROQ_MODEL must name an approved available model for scheduled publishing.");
 
   const response = await groq.chat.completions.create({
-    model: cleanEnv(process.env.BLOG_GROQ_MODEL) ?? "llama-3.3-70b-versatile",
+    model,
     temperature: 0.55,
     response_format: { type: "json_object" },
     messages: [
@@ -226,7 +228,7 @@ async function publishDate(sourceDate: string, index: number, dailySequence: num
     checklist: post.checklist,
     faqs: post.faqs,
     status: "published",
-    generated_by: cleanEnv(process.env.BLOG_GROQ_MODEL) ?? "llama-3.3-70b-versatile",
+    generated_by: cleanEnv(process.env.BLOG_GROQ_MODEL) ?? cleanEnv(process.env.GROQ_MODEL) ?? "configured-model",
     word_count: wordCount
   });
   if (error) throw error;

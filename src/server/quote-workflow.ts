@@ -25,6 +25,12 @@ export const optionalQuoteWorkflowColumns = new Set([
   "payment_amount",
   "payment_provider",
   "quote_status_history",
+  "standard_price",
+  "discountable_amount",
+  "discount_rate",
+  "discount_amount",
+  "final_price",
+  "pricing_rule_version",
   "company_id"
 ]);
 
@@ -35,7 +41,7 @@ function missingColumnFromPostgrest(error: { code?: string; message?: string } |
 }
 
 export function quoteAmount(quote: QuoteRequestRecord) {
-  const amount = Number(quote.quoted_price ?? quote.payment_amount ?? quote.estimated_price ?? 0);
+  const amount = Number(quote.final_price ?? quote.quoted_price ?? quote.payment_amount ?? quote.estimated_price ?? 0);
   return Number.isFinite(amount) ? amount : 0;
 }
 

@@ -1234,6 +1234,7 @@ export function CustomerDashboard() {
                   key={overview?.profile?.email ?? "customer-booking"}
                   customer={overview?.profile ?? null}
                   wallet={overview?.wallet ?? null}
+                  addresses={overview?.addresses ?? []}
                   authorizedFetch={authorizedFetch}
                   onChanged={loadOverview}
                   prefill={bookingPrefill}
@@ -2240,6 +2241,7 @@ export function CustomerDashboard() {
                   const canRespond = canCustomerRespondToQuote(quote.status, quote.quote_valid_until);
                   const canPay = canPayQuote(quote.status, quote.payment_status, quote.quote_valid_until);
                   const amount = quoteDisplayAmount(quote);
+                  const awaitingReview = String(quote.status ?? "").toUpperCase() === "PENDING_REVIEW";
                   return (
                     <Card key={quote.request_id} className="glass">
                       <CardHeader>
@@ -2258,13 +2260,18 @@ export function CustomerDashboard() {
                           </span>
                           <span className="rounded-md border bg-background/40 p-3">
                             <span className="block text-xs uppercase tracking-[0.18em] text-muted-foreground">ETA</span>
-                            <span className="mt-2 block font-semibold">{quoteDisplayEta(quote)}</span>
+                            <span className="mt-2 block font-semibold">{awaitingReview ? "Operations review" : quoteDisplayEta(quote)}</span>
                           </span>
                           <span className="rounded-md border bg-background/40 p-3">
                             <span className="block text-xs uppercase tracking-[0.18em] text-muted-foreground">Quoted amount</span>
-                            <span className="mt-2 block font-semibold">{moneyFormatter.format(amount)}</span>
+                            <span className="mt-2 block font-semibold">{awaitingReview ? "Final price under review" : moneyFormatter.format(amount)}</span>
                           </span>
                         </div>
+                        {awaitingReview && (
+                          <div className="rounded-md border border-primary/30 bg-primary/10 p-3 text-sm leading-6 text-muted-foreground">
+                            Fly Logistics is confirming the international route, documents, duties, and final price. You will be notified before payment is requested.
+                          </div>
+                        )}
                         {(quote.quote_notes || quote.review_notes || quote.quote_valid_until) && (
                           <div className="rounded-md border bg-background/40 p-3 text-muted-foreground">
                             {(quote.quote_notes || quote.review_notes) && <p>{quote.quote_notes ?? quote.review_notes}</p>}

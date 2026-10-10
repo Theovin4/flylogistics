@@ -9,14 +9,13 @@ import {
   normalizeTransportationType,
   optionalDriverColumns
 } from "@/lib/driver-data";
-import { requireRole } from "@/lib/request-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { getCloudBillingPlan, isCloudPlanLimitReached } from "@/lib/cloud-plans";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
 import { logApiError, requestContext } from "@/server/monitoring";
 import { writeOperationalEvent } from "@/server/operational-events";
-import { getTenantContextForProfile, withCompanyId } from "@/server/tenancy";
+import { getTenantContextForProfile, requireCompanyRole, withCompanyId } from "@/server/tenancy";
 
 type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 
@@ -70,7 +69,7 @@ export async function GET(request: Request) {
   const limited = await enforceRateLimit(request, "drivers", { limit: 80, windowSeconds: 60 });
   if (limited) return limited;
 
-  const access = await requireRole(request, ["admin", "dispatcher", "driver"]);
+  const access = await requireCompanyRole(request, ["owner", "admin", "dispatcher", "driver"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -117,7 +116,7 @@ export async function POST(request: Request) {
   const limited = await enforceRateLimit(request, "drivers-create", { limit: 30, windowSeconds: 60 });
   if (limited) return limited;
 
-  const access = await requireRole(request, ["admin"]);
+  const access = await requireCompanyRole(request, ["owner", "admin"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 

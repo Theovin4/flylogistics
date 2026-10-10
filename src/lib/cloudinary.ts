@@ -5,6 +5,7 @@ const allowedUploadFolders = [
   "fly-logistics/drivers",
   "fly-logistics/driver-kyc",
   "fly-logistics/packages",
+  "fly-logistics/packages/international-documents",
   "fly-logistics/proof-of-delivery",
   "fly-logistics/company-media"
 ] as const;

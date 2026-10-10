@@ -48,12 +48,12 @@ export default function MerchantPage() {
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Button asChild size="lg">
-                  <Link href={"/customer/login?next=/merchant/dashboard" as Route}>
+                  <Link href={"/merchant/login" as Route}>
                     Merchant login <ArrowRight />
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="outline">
-                  <Link href={"/customer/register?next=/merchant/dashboard" as Route}>
+                  <Link href={"/merchant/register" as Route}>
                     Create business account
                   </Link>
                 </Button>
@@ -69,8 +69,8 @@ export default function MerchantPage() {
               </CardHeader>
               <CardContent className="grid gap-4">
                 {[
-                  "Sign in or create a customer account.",
-                  "Create your company profile inside the merchant workspace.",
+                  "Sign in or open a dedicated Merchant Account.",
+                  "Complete a short business onboarding profile.",
                   "Save pickup and delivery addresses.",
                   "Upload shipment batches, fund wallet, and track delivery performance."
                 ].map((step, index) => (

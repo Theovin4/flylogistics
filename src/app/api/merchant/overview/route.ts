@@ -11,6 +11,7 @@ import { writeAuditLog } from "@/server/audit";
 import { logApiError, requestContext } from "@/server/monitoring";
 import { writeOperationalEvent } from "@/server/operational-events";
 import { calculateLogisticsPrice } from "@/server/pricing";
+import { resolveMerchantPrice } from "@/server/merchant-pricing";
 import { quoteAmount } from "@/server/quote-workflow";
 import { getWalletOverview, isWalletSchemaMissing } from "@/server/wallets";
 
@@ -20,6 +21,7 @@ type SupabaseAdmin = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 type BusinessAccount = Record<string, unknown> & { id: number | string; account_name?: string | null };
 type BusinessMember = Record<string, unknown> & { id: number | string; business_account_id: number | string; user_id?: string | null; role?: string | null; status?: string | null };
 type CustomerAddress = Record<string, unknown> & { id: number | string };
+type MerchantRecipient = Record<string, unknown> & { id: number | string };
 
 const businessAccountSchema = z.object({
   action: z.literal("create_business_account"),
@@ -54,14 +56,14 @@ const addressSchema = z.object({
 });
 
 const bulkShipmentRowSchema = z.object({
-  customerName: z.string().trim().max(160).optional(),
-  recipientName: z.string().trim().max(160).optional(),
-  pickupPhone: z.string().trim().max(40).optional(),
-  deliveryPhone: z.string().trim().max(40).optional(),
+  customerName: z.string().trim().min(2).max(160),
+  recipientName: z.string().trim().min(2).max(160),
+  pickupPhone: z.string().trim().min(10).max(40),
+  deliveryPhone: z.string().trim().min(10).max(40),
   pickupCountry: z.string().trim().max(80).optional(),
   destinationCountry: z.string().trim().max(80).optional(),
-  pickupState: z.string().trim().max(80).optional(),
-  destinationState: z.string().trim().max(80).optional(),
+  pickupState: z.string().trim().min(2).max(80),
+  destinationState: z.string().trim().min(2).max(80),
   pickupAddress: z.string().trim().min(4),
   deliveryAddress: z.string().trim().min(4),
   packageType: z.string().trim().min(2),
@@ -70,10 +72,23 @@ const bulkShipmentRowSchema = z.object({
   deliveryCategory: z.enum(deliveryCategoryValues).default("local_nigeria"),
   notes: z.string().trim().max(1000).optional(),
   businessReference: z.string().trim().max(120).optional()
+}).superRefine((row, context) => {
+  if (row.deliveryCategory === "international_import" && !row.pickupCountry) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["pickupCountry"], message: "Origin country is required for imports." });
+  }
+  if (row.deliveryCategory === "international_export" && !row.destinationCountry) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["destinationCountry"], message: "Destination country is required for exports." });
+  }
 });
 
 const bulkCreateSchema = z.object({
   action: z.literal("bulk_create_quotes"),
+  accountId: z.coerce.number().int().positive(),
+  rows: z.array(bulkShipmentRowSchema).min(1).max(100)
+});
+
+const bulkPreviewSchema = z.object({
+  action: z.literal("preview_bulk_quotes"),
   accountId: z.coerce.number().int().positive(),
   rows: z.array(bulkShipmentRowSchema).min(1).max(100)
 });
@@ -84,10 +99,25 @@ const invoiceSchema = z.object({
   requestIds: z.array(z.string().trim().min(3)).max(100).optional()
 });
 
+const recipientSchema = z.object({
+  action: z.literal("save_recipient"),
+  accountId: z.coerce.number().int().positive(),
+  name: z.string().trim().min(2).max(160),
+  phone: z.string().trim().min(10).max(40),
+  email: z.string().trim().email().max(240).optional().or(z.literal("")),
+  address: z.string().trim().min(8).max(260),
+  city: z.string().trim().min(2).max(120),
+  state: z.string().trim().min(2).max(120),
+  country: z.string().trim().min(2).max(100).default("Nigeria"),
+  notes: z.string().trim().max(500).optional()
+});
+
 const merchantActionSchema = z.discriminatedUnion("action", [
   businessAccountSchema,
   teamMemberSchema,
   addressSchema,
+  recipientSchema,
+  bulkPreviewSchema,
   bulkCreateSchema,
   invoiceSchema
 ]);
@@ -195,29 +225,7 @@ async function loadMerchantAccounts(supabase: SupabaseAdmin, profile: AuthProfil
     throw memberResult.error;
   }
 
-  let members = (memberResult.data ?? []) as BusinessMember[];
-
-  if (members.length === 0 && profile.email) {
-    const contactAccount = await supabase
-      .from("business_accounts")
-      .select("*")
-      .ilike("contact_email", profile.email)
-      .limit(1);
-
-    if (!contactAccount.error && contactAccount.data?.[0]) {
-      const { data } = await supabase
-        .from("business_account_members")
-        .upsert({
-          business_account_id: contactAccount.data[0].id,
-          user_id: profile.id,
-          role: "owner",
-          status: "active"
-        }, { onConflict: "business_account_id,user_id" })
-        .select("*")
-        .single();
-      if (data) members = [data as BusinessMember];
-    }
-  }
+  const members = (memberResult.data ?? []) as BusinessMember[];
 
   const accountIds = members.map((member) => member.business_account_id).filter(Boolean);
   if (accountIds.length === 0) return { accounts: [] as BusinessAccount[], members, warnings };
@@ -226,6 +234,7 @@ async function loadMerchantAccounts(supabase: SupabaseAdmin, profile: AuthProfil
     .from("business_accounts")
     .select("*")
     .in("id", accountIds)
+    .ilike("status", "ACTIVE")
     .order("created_at", { ascending: true });
 
   if (accountResult.error) throw accountResult.error;
@@ -253,64 +262,48 @@ async function loadAccountTeam(supabase: SupabaseAdmin, accountId?: number | str
   return rows.map((row) => ({ ...row, profile: row.user_id ? profileById.get(String(row.user_id)) ?? null : null }));
 }
 
-async function loadQuotes(supabase: SupabaseAdmin, profile: AuthProfile, accountId?: number | string | null) {
-  const byEmail = profile.email
-    ? await supabase.from("quote_requests").select("*").ilike("customer_email", profile.email).order("created_at", { ascending: false }).limit(100)
-    : { data: [], error: null };
+async function loadQuotes(supabase: SupabaseAdmin, accountId?: number | string | null) {
   const byAccount = accountId
     ? await supabase.from("quote_requests").select("*").eq("business_account_id", accountId).order("created_at", { ascending: false }).limit(100)
     : { data: [], error: null };
 
-  if (byEmail.error && !isMissingSchema(byEmail.error)) throw byEmail.error;
   if (byAccount.error && !isMissingSchema(byAccount.error)) throw byAccount.error;
-
-  const merged = new Map<string, QuoteRequestRecord>();
-  for (const quote of [...(byAccount.data ?? []), ...(byEmail.data ?? [])] as QuoteRequestRecord[]) {
-    merged.set(quote.request_id, quote);
-  }
-  return [...merged.values()].sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
+  return ((byAccount.data ?? []) as QuoteRequestRecord[]).sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
 }
 
-async function loadShipments(supabase: SupabaseAdmin, profile: AuthProfile, accountId?: number | string | null) {
-  const byEmail = profile.email
-    ? await supabase.from("shipments").select(shipmentWithDriverSelect).ilike("customer_email", profile.email).order("created_at", { ascending: false }).limit(100)
-    : { data: [], error: null };
+async function loadShipments(supabase: SupabaseAdmin, accountId?: number | string | null) {
   const byAccount = accountId
     ? await supabase.from("shipments").select(shipmentWithDriverSelect).eq("business_account_id", accountId).order("created_at", { ascending: false }).limit(100)
     : { data: [], error: null };
 
-  if (byEmail.error && !isMissingSchema(byEmail.error)) throw byEmail.error;
   if (byAccount.error && !isMissingSchema(byAccount.error)) throw byAccount.error;
-
-  const merged = new Map<string, ShipmentRecord>();
-  for (const shipment of [...(byAccount.data ?? []), ...(byEmail.data ?? [])] as ShipmentRecord[]) {
-    merged.set(shipment.tracking_id, shipment);
-  }
-  return [...merged.values()].sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
+  return ((byAccount.data ?? []) as ShipmentRecord[]).sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
 }
 
-async function loadAddresses(supabase: SupabaseAdmin, profile: AuthProfile, accountId?: number | string | null) {
-  const base = await supabase
-    .from("customer_addresses")
+async function loadRecipients(supabase: SupabaseAdmin, accountId?: number | string | null) {
+  if (!accountId) return [];
+  const result = await supabase
+    .from("merchant_recipients")
     .select("*")
-    .eq("user_id", profile.id)
+    .eq("business_account_id", accountId)
     .order("created_at", { ascending: false })
-    .limit(60);
-  if (base.error && !isMissingSchema(base.error)) throw base.error;
+    .limit(100);
+  if (result.error && isMissingSchema(result.error)) return [];
+  if (result.error) throw result.error;
+  return (result.data ?? []) as MerchantRecipient[];
+}
 
-  if (!accountId) return (base.data ?? []) as CustomerAddress[];
+async function loadAddresses(supabase: SupabaseAdmin, accountId?: number | string | null) {
+  if (!accountId) return [];
   const accountRows = await supabase
     .from("customer_addresses")
     .select("*")
     .eq("business_account_id", accountId)
     .order("created_at", { ascending: false })
     .limit(60);
-  if (accountRows.error && isMissingSchema(accountRows.error)) return (base.data ?? []) as CustomerAddress[];
+  if (accountRows.error && isMissingSchema(accountRows.error)) return [];
   if (accountRows.error) throw accountRows.error;
-
-  const merged = new Map<string, CustomerAddress>();
-  for (const address of [...(accountRows.data ?? []), ...(base.data ?? [])] as CustomerAddress[]) merged.set(String(address.id), address);
-  return [...merged.values()];
+  return (accountRows.data ?? []) as CustomerAddress[];
 }
 
 async function loadInvoices(supabase: SupabaseAdmin, accountId?: number | string | null) {
@@ -370,11 +363,12 @@ export async function GET(request: Request) {
       ? accountState.accounts.find((item) => String(item.id) === requestedAccountId) ?? null
       : accountState.accounts[0] ?? null;
     const accountId = account?.id ?? null;
-    const [team, quotes, shipments, addresses, walletOverview, invoiceResult] = await Promise.all([
+    const [team, quotes, shipments, addresses, recipients, walletOverview, invoiceResult] = await Promise.all([
       loadAccountTeam(supabase, accountId),
-      loadQuotes(supabase, profile, accountId),
-      loadShipments(supabase, profile, accountId),
-      loadAddresses(supabase, profile, accountId),
+      loadQuotes(supabase, accountId),
+      loadShipments(supabase, accountId),
+      loadAddresses(supabase, accountId),
+      loadRecipients(supabase, accountId),
       getWalletOverview(supabase, profile.id),
       loadInvoices(supabase, accountId)
     ]);
@@ -393,6 +387,7 @@ export async function GET(request: Request) {
       quoteRequests: quotes,
       shipments,
       addresses,
+      recipients,
       wallet: walletOverview.error ? null : walletOverview.wallet,
       walletTransactions: walletOverview.error ? [] : walletOverview.transactions,
       invoices: invoiceResult.invoices,
@@ -500,13 +495,80 @@ export async function POST(request: Request) {
     return NextResponse.json({ address: insert.data }, { status: 201 });
   }
 
+  if (parsed.data.action === "save_recipient") {
+    const accessCheck = await assertBusinessAccess(supabase, profile, parsed.data.accountId);
+    if (accessCheck.response) return accessCheck.response;
+    if (!["owner", "admin", "operations"].includes(String(accessCheck.role)) && profile.role !== "admin") {
+      return NextResponse.json({ error: "Your merchant role cannot add recipients." }, { status: 403 });
+    }
+    const recipient = await supabase.from("merchant_recipients").insert({
+      business_account_id: parsed.data.accountId,
+      name: parsed.data.name,
+      phone: parsed.data.phone,
+      email: parsed.data.email || null,
+      address: parsed.data.address,
+      city: parsed.data.city,
+      state: parsed.data.state,
+      country: parsed.data.country,
+      notes: parsed.data.notes || null,
+      created_by: profile.id,
+      updated_at: new Date().toISOString()
+    }).select("*").single();
+    if (recipient.error) return NextResponse.json({ error: isMissingSchema(recipient.error) ? "Run the latest merchant schema before saving recipients." : "Unable to save recipient." }, { status: isMissingSchema(recipient.error) ? 503 : 500 });
+    await writeAuditLog(supabase, { actor: profile, action: "merchant.recipient_create", entityType: "merchant_recipient", entityId: String(recipient.data.id), metadata: { businessAccountId: parsed.data.accountId }, request });
+    return NextResponse.json({ recipient: recipient.data }, { status: 201 });
+  }
+
+  if (parsed.data.action === "preview_bulk_quotes") {
+    const accessCheck = await assertBusinessAccess(supabase, profile, parsed.data.accountId);
+    if (accessCheck.response) return accessCheck.response;
+    const account = await supabase.from("business_accounts").select("*").eq("id", parsed.data.accountId).ilike("status", "ACTIVE").maybeSingle();
+    if (account.error || !account.data) return NextResponse.json({ error: "Active business account not found." }, { status: 404 });
+
+    const previews = [];
+    for (const [index, row] of parsed.data.rows.entries()) {
+      const quote = await calculateLogisticsPrice({
+        pickupState: row.pickupState,
+        destinationState: row.destinationState,
+        pickupCountry: row.pickupCountry,
+        destinationCountry: row.destinationCountry,
+        pickupAddress: row.pickupAddress,
+        deliveryAddress: row.deliveryAddress,
+        packageType: row.packageType,
+        urgency: row.urgency ?? "standard",
+        weightKg: row.weightKg,
+        deliveryCategory: row.deliveryCategory ?? "local_nigeria"
+      }, supabase);
+      const price = resolveMerchantPrice(quote.amount, account.data);
+      previews.push({
+        rowNumber: index + 1,
+        standardPrice: price.standardPrice,
+        discountRate: price.discountRate,
+        discountAmount: price.discountAmount,
+        finalPrice: price.finalPrice,
+        etaLabel: quote.etaLabel,
+        serviceAvailable: quote.serviceAvailable,
+        warnings: quote.warnings
+      });
+    }
+
+    return NextResponse.json({
+      previews,
+      totals: previews.reduce((total, item) => ({
+        standardPrice: total.standardPrice + item.standardPrice,
+        discountAmount: total.discountAmount + item.discountAmount,
+        finalPrice: total.finalPrice + item.finalPrice
+      }), { standardPrice: 0, discountAmount: 0, finalPrice: 0 })
+    });
+  }
+
   if (parsed.data.action === "bulk_create_quotes") {
     const accessCheck = await assertBusinessAccess(supabase, profile, parsed.data.accountId);
     if (accessCheck.response) return accessCheck.response;
     if (!profile.email) return NextResponse.json({ error: "Your account needs an email before creating merchant shipments." }, { status: 409 });
 
-    const account = await supabase.from("business_accounts").select("*").eq("id", parsed.data.accountId).maybeSingle();
-    if (account.error || !account.data) return NextResponse.json({ error: "Business account not found." }, { status: 404 });
+    const account = await supabase.from("business_accounts").select("*").eq("id", parsed.data.accountId).ilike("status", "ACTIVE").maybeSingle();
+    if (account.error || !account.data) return NextResponse.json({ error: "Active business account not found." }, { status: 404 });
 
     const batchId = makeBatchId();
     const created: QuoteRequestRecord[] = [];
@@ -525,6 +587,7 @@ export async function POST(request: Request) {
         weightKg: row.weightKg,
         deliveryCategory
       }, supabase);
+      const merchantPrice = resolveMerchantPrice(quote.amount, account.data);
       const now = new Date().toISOString();
       const payload = {
         request_id: makeRequestId(),
@@ -548,17 +611,31 @@ export async function POST(request: Request) {
         urgency,
         delivery_category: deliveryCategory,
         notes: row.notes || null,
-        estimated_price: quote.amount,
+        estimated_price: merchantPrice.finalPrice,
         estimated_eta_hours: quote.etaHours,
-        pricing_breakdown: quote.breakdown,
+        pricing_breakdown: {
+          ...quote.breakdown,
+          standardPrice: merchantPrice.standardPrice,
+          discountableAmount: merchantPrice.discountableAmount,
+          merchantDiscountRate: merchantPrice.discountRate,
+          merchantDiscountAmount: merchantPrice.discountAmount,
+          finalMerchantPrice: merchantPrice.finalPrice,
+          pricingRuleVersion: merchantPrice.pricingRuleVersion
+        },
         vehicle_type: quote.vehicleType,
         delivery_type: quote.deliveryType,
         service_warnings: quote.warnings,
-        quoted_price: quote.amount,
+        quoted_price: merchantPrice.finalPrice,
         quoted_eta_hours: quote.etaHours,
         quoted_eta_label: quote.etaLabel,
         payment_status: "UNPAID",
-        payment_amount: quote.amount,
+        payment_amount: merchantPrice.finalPrice,
+        standard_price: merchantPrice.standardPrice,
+        discountable_amount: merchantPrice.discountableAmount,
+        discount_rate: merchantPrice.discountRate,
+        discount_amount: merchantPrice.discountAmount,
+        final_price: merchantPrice.finalPrice,
+        pricing_rule_version: merchantPrice.pricingRuleVersion,
         payment_provider: "flutterwave",
         status: "QUOTED",
         quote_status_history: appendQuoteStatusHistory(null, {
@@ -594,7 +671,13 @@ export async function POST(request: Request) {
         "payment_status",
         "payment_amount",
         "payment_provider",
-        "quote_status_history"
+        "quote_status_history",
+        "standard_price",
+        "discountable_amount",
+        "discount_rate",
+        "discount_amount",
+        "final_price",
+        "pricing_rule_version"
       ]));
       if (insert.error || !insert.data) throw insert.error ?? new Error("Unable to create one bulk quote.");
       created.push(insert.data as QuoteRequestRecord);
@@ -610,7 +693,7 @@ export async function POST(request: Request) {
     const accessCheck = await assertBusinessAccess(supabase, profile, accountId);
     if (accessCheck.response) return accessCheck.response;
     const selectedQuotes = parsed.data.requestIds?.length
-      ? await supabase.from("quote_requests").select("*").in("request_id", parsed.data.requestIds.map((id) => id.toUpperCase()))
+      ? await supabase.from("quote_requests").select("*").eq("business_account_id", accountId).in("request_id", parsed.data.requestIds.map((id) => id.toUpperCase()))
       : await supabase.from("quote_requests").select("*").eq("business_account_id", accountId).neq("payment_status", "PAID").order("created_at", { ascending: false }).limit(100);
 
     if (selectedQuotes.error) return NextResponse.json({ error: "Unable to load invoice items." }, { status: 500 });

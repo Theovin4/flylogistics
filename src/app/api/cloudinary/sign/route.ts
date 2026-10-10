@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   const limited = await enforceRateLimit(request, "cloudinary-sign", { limit: 30, windowSeconds: 60 });
   if (limited) return limited;
 
-  const access = await requireRole(request, ["admin", "dispatcher", "driver"]);
+  const access = await requireRole(request, ["admin", "dispatcher", "driver", "customer"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -48,14 +48,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Upload folder is not allowed." }, { status: 403 });
   }
 
+  const isInternationalDocument = folder.startsWith("fly-logistics/packages/international-documents");
   const resourceType = String(parsed.data.paramsToSign.resource_type ?? parsed.data.paramsToSign.resourceType ?? "image");
-  if (resourceType !== "image") {
-    return NextResponse.json({ error: "Only image uploads are allowed." }, { status: 400 });
+  if (resourceType !== "image" && !(isInternationalDocument && resourceType === "raw")) {
+    return NextResponse.json({ error: "This upload type is not allowed." }, { status: 400 });
   }
 
   const maxFileSize = Number(parsed.data.paramsToSign.max_file_size ?? 0);
-  if (Number.isFinite(maxFileSize) && maxFileSize > 5_000_000) {
-    return NextResponse.json({ error: "Image uploads must be 5 MB or less." }, { status: 400 });
+  const sizeLimit = isInternationalDocument ? 10_000_000 : 5_000_000;
+  if (Number.isFinite(maxFileSize) && maxFileSize > sizeLimit) {
+    return NextResponse.json({ error: isInternationalDocument ? "Shipment documents must be 10 MB or less." : "Image uploads must be 5 MB or less." }, { status: 400 });
   }
 
   try {

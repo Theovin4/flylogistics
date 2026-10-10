@@ -23,6 +23,29 @@ const pricingQuoteSchema = z.object({
   packageValue: z.coerce.number().min(0).max(1_000_000_000).optional(),
   customsInformation: z.string().trim().max(2000).optional(),
   exportImportDocuments: z.string().trim().max(2000).optional()
+}).superRefine((data, context) => {
+  const pickupCountry = data.pickupCountry?.trim().toLowerCase();
+  const destinationCountry = data.destinationCountry?.trim().toLowerCase();
+
+  if (data.deliveryCategory === "local_nigeria") {
+    if (pickupCountry !== "nigeria" || destinationCountry !== "nigeria") {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["deliveryCategory"], message: "Local deliveries must start and end in Nigeria." });
+    }
+    if (!data.pickupState) context.addIssue({ code: z.ZodIssueCode.custom, path: ["pickupState"], message: "Select a pickup state." });
+    if (!data.destinationState) context.addIssue({ code: z.ZodIssueCode.custom, path: ["destinationState"], message: "Select a delivery state." });
+  }
+
+  if (data.deliveryCategory === "international_import") {
+    if (!pickupCountry || pickupCountry === "nigeria") context.addIssue({ code: z.ZodIssueCode.custom, path: ["pickupCountry"], message: "Select the international origin country." });
+    if (destinationCountry !== "nigeria") context.addIssue({ code: z.ZodIssueCode.custom, path: ["destinationCountry"], message: "Imports must arrive in Nigeria." });
+    if (!data.destinationState) context.addIssue({ code: z.ZodIssueCode.custom, path: ["destinationState"], message: "Select the Nigerian delivery state." });
+  }
+
+  if (data.deliveryCategory === "international_export") {
+    if (pickupCountry !== "nigeria") context.addIssue({ code: z.ZodIssueCode.custom, path: ["pickupCountry"], message: "Exports must leave from Nigeria." });
+    if (!destinationCountry || destinationCountry === "nigeria") context.addIssue({ code: z.ZodIssueCode.custom, path: ["destinationCountry"], message: "Select the international destination country." });
+    if (!data.pickupState) context.addIssue({ code: z.ZodIssueCode.custom, path: ["pickupState"], message: "Select the Nigerian pickup state." });
+  }
 });
 
 export async function POST(request: Request) {

@@ -123,7 +123,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               var path = window.location.pathname;
               var privateRoute = privatePrefixes.some(function (prefix) { return path === prefix || path.indexOf(prefix + '/') === 0; })
                 || path === '/merchant/dashboard' || path.indexOf('/merchant/dashboard/') === 0
-                || ['/cloud/analytics', '/cloud/billing', '/cloud/customers', '/cloud/dashboard', '/cloud/drivers', '/cloud/login', '/cloud/settings', '/cloud/shipments', '/cloud/signup'].some(function (route) { return path === route || path.indexOf(route + '/') === 0; });
+                || ['/cloud/analytics', '/cloud/billing', '/cloud/customers', '/cloud/dashboard', '/cloud/drivers', '/cloud/login', '/cloud/operations', '/cloud/rates', '/cloud/settings', '/cloud/shipments', '/cloud/signup', '/cloud/support', '/cloud/team'].some(function (route) { return path === route || path.indexOf(route + '/') === 0; });
               if (privateRoute) return;
               !function(f,b,e,v,n,t,s)
               {if(f.fbq)return;n=f.fbq=function(){n.callMethod?

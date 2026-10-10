@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { ZodError, ZodType } from "zod";
+import type { ZodError, ZodType, ZodTypeDef } from "zod";
 import { rateLimitRequest, type RateLimitOptions } from "@/server/rate-limit";
 import { logApiError, logWarn, requestContext } from "@/server/monitoring";
 
@@ -35,7 +35,7 @@ export function apiError(message: string, options?: ApiErrorOptions) {
   );
 }
 
-export async function parseJson<T>(request: Request, schema: ZodType<T>, errorMessage: string): Promise<ParseJsonResult<T>> {
+export async function parseJson<T>(request: Request, schema: ZodType<T, ZodTypeDef, unknown>, errorMessage: string): Promise<ParseJsonResult<T>> {
   const contentLength = Number(request.headers.get("content-length") ?? 0);
   if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) {
     logWarn("Rejected oversized API payload.", requestContext(request, { contentLength, maxBytes: MAX_JSON_BODY_BYTES }));

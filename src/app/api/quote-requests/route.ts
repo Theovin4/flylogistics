@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { deliveryCategoryValues, pricingUrgencies, shipmentTypeFromDeliveryCategory } from "@/lib/pricing";
-import { freightClassificationOptions, freightModeOptions, supportedCurrencies } from "@/lib/international";
+import { shipmentTypeFromDeliveryCategory } from "@/lib/pricing";
+import {
+  customerBookingAddress,
+  customerBookingDocuments,
+  customerBookingNotes,
+  customerBookingSchema,
+  isInternationalCustomerBooking,
+  type CustomerBookingInput
+} from "@/lib/customer-booking";
 import { appendQuoteStatusHistory } from "@/lib/quotes";
 import { estimateQuote, makeRequestId, type QuoteRequestRecord } from "@/lib/shipments";
 import { whatsappMessages } from "@/lib/whatsapp";
@@ -14,54 +20,6 @@ import { sendCustomerNotification } from "@/server/notifications/service";
 import { writeOperationalEvent } from "@/server/operational-events";
 import { calculateLogisticsPrice } from "@/server/pricing";
 import { getTenantContextForProfile, withCompanyId } from "@/server/tenancy";
-
-const quoteRequestSchema = z.object({
-  customerName: z.string().trim().min(2),
-  customerEmail: z.string().trim().email(),
-  customerPhone: z.string().trim().min(5).max(40),
-  recipientName: z.string().trim().min(2).max(160),
-  pickupPhone: z.string().trim().min(5).max(40).optional(),
-  deliveryPhone: z.string().trim().min(5).max(40).optional(),
-  pickupCountry: z.string().trim().min(2).max(80).optional().nullable(),
-  destinationCountry: z.string().trim().min(2).max(80).optional().nullable(),
-  pickupState: z.string().trim().min(2).max(80).optional().nullable(),
-  destinationState: z.string().trim().min(2).max(80).optional().nullable(),
-  pickupAddress: z.string().trim().min(4),
-  deliveryAddress: z.string().trim().min(4),
-  packageType: z.string().trim().min(2),
-  weightKg: z.coerce.number().positive().max(100000),
-  urgency: z.enum(pricingUrgencies.map((item) => item.value) as ["standard", "priority", "critical"]),
-  deliveryCategory: z.enum(deliveryCategoryValues).default("local_nigeria"),
-  freightMode: z.enum(freightModeOptions.map((item) => item.value) as ["air_freight", "sea_freight"]).optional(),
-  quoteCurrency: z.enum(supportedCurrencies).default("NGN"),
-  freightClassification: z.enum(freightClassificationOptions.map((item) => item.value) as ["documents", "general_cargo", "ecommerce_goods", "electronics", "fashion", "fragile", "oversized", "restricted_review"]).optional(),
-  customsInformation: z.string().trim().max(2000).optional(),
-  packageValue: z.coerce.number().min(0).max(1_000_000_000).optional(),
-  dutiesTaxesAmount: z.coerce.number().min(0).max(1_000_000_000).optional(),
-  exportImportDocuments: z.string().trim().max(2000).optional(),
-  notes: z.string().trim().max(1000).optional(),
-  website: z.string().trim().max(160).optional(),
-  formStartedAt: z.coerce.number().int().positive().optional()
-}).superRefine((data, context) => {
-  if (data.pickupAddress.trim().length < 8) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["pickupAddress"], message: "Enter a full pickup address with street, area, city, and state." });
-  }
-  if (data.deliveryAddress.trim().length < 8) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["deliveryAddress"], message: "Enter a full delivery address with street, area, city, and state." });
-  }
-  if (!data.pickupPhone?.trim()) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["pickupPhone"], message: "Enter the pickup contact phone number." });
-  }
-  if (!data.deliveryPhone?.trim()) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["deliveryPhone"], message: "Enter the receiver phone number." });
-  }
-  if (data.deliveryCategory !== "international_import" && !data.pickupState?.trim()) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["pickupState"], message: "Select the pickup state." });
-  }
-  if (data.deliveryCategory !== "international_export" && !data.destinationState?.trim()) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["destinationState"], message: "Select the destination state." });
-  }
-});
 
 function missingColumn(error: { message?: string } | null | undefined) {
   const message = error?.message ?? "";
@@ -131,7 +89,7 @@ export async function POST(request: Request) {
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   if (!access.profile.email) return NextResponse.json({ error: "Your customer account needs an email before booking a shipment." }, { status: 409 });
 
-  const parsed = await parseJson(request, quoteRequestSchema, "Please complete the quote request form.");
+  const parsed = await parseJson<CustomerBookingInput>(request, customerBookingSchema, "Please complete the booking form.");
   if (parsed.response) return parsed.response;
 
   const submittedTooFast = parsed.data.formStartedAt ? Date.now() - parsed.data.formStartedAt < 1500 : false;
@@ -163,13 +121,16 @@ export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
   const tenant = supabase ? await getTenantContextForProfile(supabase, access.profile) : null;
   const deliveryCategory = parsed.data.deliveryCategory ?? "local_nigeria";
+  const internationalReview = isInternationalCustomerBooking(deliveryCategory);
+  const pickupAddress = customerBookingAddress(parsed.data.pickupAddress, parsed.data.pickupCity, parsed.data.pickupPostalCode);
+  const deliveryAddress = customerBookingAddress(parsed.data.deliveryAddress, parsed.data.deliveryCity, parsed.data.deliveryPostalCode);
   const quote = await calculateLogisticsPrice({
     pickupState: parsed.data.pickupState,
     destinationState: parsed.data.destinationState,
     pickupCountry: parsed.data.pickupCountry,
     destinationCountry: parsed.data.destinationCountry,
-    pickupAddress: parsed.data.pickupAddress,
-    deliveryAddress: parsed.data.deliveryAddress,
+    pickupAddress,
+    deliveryAddress,
     packageType: parsed.data.packageType,
     urgency: parsed.data.urgency,
     weightKg: parsed.data.weightKg,
@@ -179,7 +140,7 @@ export async function POST(request: Request) {
     freightClassification: parsed.data.freightClassification,
     packageValue: parsed.data.packageValue,
     customsInformation: parsed.data.customsInformation,
-    exportImportDocuments: parsed.data.exportImportDocuments
+    exportImportDocuments: customerBookingDocuments(parsed.data)
   }, supabase);
   const now = new Date().toISOString();
   const quoteValidUntil = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
@@ -195,8 +156,8 @@ export async function POST(request: Request) {
     destination_country: parsed.data.destinationCountry || (deliveryCategory === "international_export" ? null : "Nigeria"),
     pickup_state: parsed.data.pickupState || null,
     destination_state: parsed.data.destinationState || null,
-    pickup_address: parsed.data.pickupAddress,
-    delivery_address: parsed.data.deliveryAddress,
+    pickup_address: pickupAddress,
+    delivery_address: deliveryAddress,
     package_type: parsed.data.packageType,
     weight_kg: parsed.data.weightKg,
     urgency: parsed.data.urgency,
@@ -216,29 +177,31 @@ export async function POST(request: Request) {
     customs_information: parsed.data.customsInformation || null,
     package_value: parsed.data.packageValue ?? null,
     duties_taxes_amount: parsed.data.dutiesTaxesAmount ?? null,
-    export_import_documents: parsed.data.exportImportDocuments || null,
-    notes: parsed.data.notes || null,
+    export_import_documents: customerBookingDocuments(parsed.data) || null,
+    notes: customerBookingNotes(parsed.data) || null,
     estimated_price: quote.amount,
     estimated_eta_hours: quote.etaHours,
     pricing_breakdown: quote.breakdown,
     vehicle_type: quote.vehicleType,
     delivery_type: quote.deliveryType,
     service_warnings: quote.warnings,
-    quoted_price: quote.amount,
-    quoted_eta_hours: quote.etaHours,
-    quoted_eta_label: quote.etaLabel,
+    quoted_price: internationalReview ? null : quote.amount,
+    quoted_eta_hours: internationalReview ? null : quote.etaHours,
+    quoted_eta_label: internationalReview ? null : quote.etaLabel,
     payment_status: "UNPAID",
     payment_reference: null,
-    payment_amount: quote.amount,
+    payment_amount: internationalReview ? null : quote.amount,
     payment_provider: "flutterwave",
-    status: "QUOTED",
+    status: internationalReview ? "PENDING_REVIEW" : "QUOTED",
     quote_status_history: appendQuoteStatusHistory(null, {
-      status: "QUOTED",
+      status: internationalReview ? "PENDING_REVIEW" : "QUOTED",
       actor_role: "customer",
-      note: "Instant delivery price generated for customer payment."
+      note: internationalReview
+        ? "International booking submitted for customs, route, and final price review."
+        : "Instant delivery price generated for customer payment."
     }),
-    quote_sent_at: now,
-    quote_valid_until: quoteValidUntil
+    quote_sent_at: internationalReview ? null : now,
+    quote_valid_until: internationalReview ? null : quoteValidUntil
   }, tenant?.companyId);
 
   if (!supabase) {
@@ -247,7 +210,7 @@ export async function POST(request: Request) {
       id: "local-preview",
       created_at: new Date().toISOString(),
       warning: "Booking storage is temporarily unavailable, so this request was not stored.",
-      pricing: quote
+      pricing: internationalReview ? null : quote
     });
   }
 
@@ -273,7 +236,7 @@ export async function POST(request: Request) {
     }
     await writeOperationalEvent(supabase, {
       category: "quote",
-      message: "Instant delivery quote stored for customer payment.",
+      message: internationalReview ? "International booking stored for operations review." : "Instant delivery quote stored for customer payment.",
       entityType: "quote_request",
       entityId: payload.request_id,
       metadata: { urgency: payload.urgency, estimatedPrice: payload.estimated_price, deliveryType: quote.deliveryType, customerNotification },
@@ -287,7 +250,11 @@ export async function POST(request: Request) {
       metadata: { customerEmail: payload.customer_email, customerPhone: payload.customer_phone, amount: payload.estimated_price },
       request
     });
-    return NextResponse.json({ ...(data as QuoteRequestRecord), pricing: quote }, { status: 201 });
+    return NextResponse.json({
+      ...(data as QuoteRequestRecord),
+      pricing: internationalReview ? null : quote,
+      requiresReview: internationalReview
+    }, { status: 201 });
   } catch (error) {
     return handleApiError(error, request, "Unable to store quote request.");
   }

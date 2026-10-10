@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { RoleGate } from "@/components/auth/role-gate";
+import { MerchantGate } from "@/components/merchant/merchant-gate";
 import { MerchantDashboard } from "@/components/merchant/merchant-dashboard";
 import { createMetadata } from "@/lib/seo";
 
@@ -12,8 +12,8 @@ export const metadata: Metadata = createMetadata({
 
 export default function MerchantDashboardPage() {
   return (
-    <RoleGate allowedRoles={["customer"]}>
+    <MerchantGate>
       <MerchantDashboard />
-    </RoleGate>
+    </MerchantGate>
   );
 }

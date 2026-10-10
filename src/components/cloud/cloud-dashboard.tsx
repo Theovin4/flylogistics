@@ -2,8 +2,9 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import type { Route } from "next";
-import { AlertTriangle, BarChart3, Building2, CheckCircle2, ClipboardCheck, CreditCard, Download, Headphones, Loader2, Package, Settings, Truck, Users } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, Building2, CheckCircle2, CircleDollarSign, ClipboardCheck, CreditCard, Download, Headphones, ImageUp, Loader2, Package, Settings, Trash2, Truck, UserCog, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,9 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AccountPasswordPanel } from "@/components/auth/account-password-panel";
 import { AccountSupportCenter } from "@/components/support/account-support-center";
+import { CloudAnalyticsWorkspace, CloudCustomersWorkspace, CloudDispatchWorkspace, CloudDriversWorkspace, CloudRatesWorkspace, CloudShipmentsWorkspace, CloudTeamWorkspace } from "@/components/cloud/cloud-operations-workspace";
+import { useCloudTenant } from "@/components/cloud/cloud-tenant-context";
 import { cloudBillingPlans, cloudLimitLabel, cloudTrialDaysRemaining, getCloudBillingPlanKey, type CloudBillingPlan } from "@/lib/cloud-plans";
 
-type CloudSection = "overview" | "settings" | "drivers" | "shipments" | "customers" | "analytics" | "billing" | "support";
+type CloudSection = "overview" | "settings" | "drivers" | "shipments" | "operations" | "customers" | "analytics" | "billing" | "support" | "team" | "rates";
 
 type CloudCompany = {
   id: string;
@@ -21,8 +24,18 @@ type CloudCompany = {
   slug: string;
   logo_url?: string | null;
   brand_color?: string | null;
+  accent_color?: string | null;
   support_email?: string | null;
   support_phone?: string | null;
+  business_address?: string | null;
+  public_address?: string | null;
+  public_phone?: string | null;
+  public_whatsapp?: string | null;
+  public_support_email?: string | null;
+  show_contact_on_tracking?: boolean | null;
+  country?: string | null;
+  timezone?: string | null;
+  currency?: string | null;
   plan?: string | null;
   status?: string | null;
   subscription_status?: string | null;
@@ -46,21 +59,19 @@ type CloudOverview = {
   recentQuotes?: Array<Record<string, unknown>>;
   members?: Array<Record<string, unknown>>;
   billingHistory?: Array<Record<string, unknown>>;
-  billingAnalytics?: {
-    monthlyRecurringRevenue?: number;
-    activeSubscriptions?: number;
-    churnRate?: number;
-    revenueByPlan?: Record<string, number>;
-  };
+  usage?: Record<string, number>;
   warnings?: string[];
   error?: string;
 };
 
 const navItems: Array<{ label: string; href: Route; section: CloudSection; icon: typeof BarChart3 }> = [
   { label: "Dashboard", href: "/cloud/dashboard" as Route, section: "overview", icon: BarChart3 },
+  { label: "Operations", href: "/cloud/operations" as Route, section: "operations", icon: Activity },
   { label: "Shipments", href: "/cloud/shipments" as Route, section: "shipments", icon: Package },
   { label: "Drivers", href: "/cloud/drivers" as Route, section: "drivers", icon: Truck },
   { label: "Customers", href: "/cloud/customers" as Route, section: "customers", icon: Users },
+  { label: "Team", href: "/cloud/team" as Route, section: "team", icon: UserCog },
+  { label: "Rates", href: "/cloud/rates" as Route, section: "rates", icon: CircleDollarSign },
   { label: "Analytics", href: "/cloud/analytics" as Route, section: "analytics", icon: BarChart3 },
   { label: "Billing", href: "/cloud/billing" as Route, section: "billing", icon: CreditCard },
   { label: "Support", href: "/cloud/support" as Route, section: "support", icon: Headphones },
@@ -92,9 +103,12 @@ function dateValue(value: unknown, fallback = "Not scheduled") {
 }
 
 export function CloudDashboard({ section }: { section: CloudSection }) {
-  const [overview, setOverview] = useState<CloudOverview | null>(null);
+  const tenant = useCloudTenant();
+  const initialCompany = tenant.company as CloudCompany | null;
+  const [overview, setOverview] = useState<CloudOverview | null>({ company: initialCompany, role: tenant.role });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [billingPlan, setBillingPlan] = useState<CloudBillingPlan | null>(null);
   const [verifyingBilling, setVerifyingBilling] = useState(false);
   const [cancellingBilling, setCancellingBilling] = useState(false);
@@ -102,11 +116,21 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState({
-    name: "",
-    logoUrl: "",
-    brandColor: "#ff7900",
-    supportEmail: "",
-    supportPhone: ""
+    name: initialCompany?.name ?? "",
+    logoUrl: initialCompany?.logo_url ?? "",
+    brandColor: initialCompany?.brand_color ?? "#ff7900",
+    supportEmail: initialCompany?.support_email ?? "",
+    supportPhone: initialCompany?.support_phone ?? "",
+    businessAddress: initialCompany?.business_address ?? "",
+    publicAddress: initialCompany?.public_address ?? "",
+    publicPhone: initialCompany?.public_phone ?? "",
+    publicWhatsapp: initialCompany?.public_whatsapp ?? "",
+    publicSupportEmail: initialCompany?.public_support_email ?? "",
+    showContactOnTracking: initialCompany?.show_contact_on_tracking ?? false,
+    country: initialCompany?.country ?? "Nigeria",
+    timezone: initialCompany?.timezone ?? "Africa/Lagos",
+    currency: initialCompany?.currency ?? "NGN",
+    accentColor: initialCompany?.accent_color ?? ""
   });
 
   async function loadOverview() {
@@ -117,12 +141,23 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
       const data = (await response.json()) as CloudOverview;
       if (!response.ok) throw new Error(data.error ?? "Unable to load cloud workspace.");
       setOverview(data);
+      tenant.setCompany((data.company ?? null) as never);
       setSettings({
         name: data.company?.name ?? "",
         logoUrl: data.company?.logo_url ?? "",
         brandColor: data.company?.brand_color ?? "#ff7900",
         supportEmail: data.company?.support_email ?? "",
-        supportPhone: data.company?.support_phone ?? ""
+        supportPhone: data.company?.support_phone ?? "",
+        businessAddress: data.company?.business_address ?? "",
+        publicAddress: data.company?.public_address ?? "",
+        publicPhone: data.company?.public_phone ?? "",
+        publicWhatsapp: data.company?.public_whatsapp ?? "",
+        publicSupportEmail: data.company?.public_support_email ?? "",
+        showContactOnTracking: data.company?.show_contact_on_tracking ?? false,
+        country: data.company?.country ?? "Nigeria",
+        timezone: data.company?.timezone ?? "Africa/Lagos",
+        currency: data.company?.currency ?? "NGN",
+        accentColor: data.company?.accent_color ?? ""
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load cloud workspace.");
@@ -133,10 +168,12 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
 
   useEffect(() => {
     void loadOverview();
+    // The workspace fetch runs once; authoritative first-paint branding comes from the persistent server layout.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const metrics = useMemo(() => overview?.metrics ?? {}, [overview]);
-  const company = overview?.company;
+  const company = overview?.company ?? initialCompany;
   const activeNav = navItems.find((item) => item.section === section) ?? navItems[0];
   const trialDays = cloudTrialDaysRemaining(company?.trial_ends_at);
   const planKey = getCloudBillingPlanKey(company?.subscription_plan ?? company?.plan);
@@ -144,11 +181,11 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
   const subscriptionStatus = company?.subscription_status ?? (trialDays > 0 ? "trialing" : "active");
   const onboardingItems = useMemo(
     () => [
-      { label: "Brand your workspace", done: Boolean(company?.name && company?.support_email && company?.support_phone) },
-      { label: "Create your first shipment", done: Number(metrics.shipments ?? 0) > 0 },
-      { label: "Add or approve a driver", done: Number(metrics.drivers ?? 0) > 0 },
-      { label: "Capture a customer or lead", done: Number(metrics.customers ?? 0) > 0 || Number(metrics.quoteRequests ?? 0) > 0 },
-      { label: "Confirm billing plan", done: subscriptionStatus === "active" || subscriptionStatus === "trialing" }
+      { label: "Brand your workspace", href: "/cloud/settings" as Route, done: Boolean(company?.name && company?.support_email && company?.support_phone) },
+      { label: "Create your first shipment", href: "/cloud/shipments" as Route, done: Number(metrics.shipments ?? 0) > 0 },
+      { label: "Add or approve a driver", href: "/cloud/drivers" as Route, done: Number(metrics.drivers ?? 0) > 0 },
+      { label: "Capture a customer or lead", href: "/cloud/customers" as Route, done: Number(metrics.customers ?? 0) > 0 || Number(metrics.quoteRequests ?? 0) > 0 },
+      { label: "Confirm billing plan", href: "/cloud/billing" as Route, done: subscriptionStatus === "active" || subscriptionStatus === "trialing" }
     ],
     [company?.name, company?.support_email, company?.support_phone, metrics.customers, metrics.drivers, metrics.quoteRequests, metrics.shipments, subscriptionStatus]
   );
@@ -167,12 +204,42 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
       const data = (await response.json()) as { company?: CloudCompany; error?: string };
       if (!response.ok) throw new Error(data.error ?? "Unable to update cloud settings.");
       setOverview((current) => ({ ...(current ?? {}), company: data.company ?? current?.company }));
+      if (data.company) tenant.setCompany(data.company as never);
       setMessage("Company settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update cloud settings.");
     } finally {
       setSaving(false);
     }
+  }
+
+  async function uploadLogo(file: File) {
+    setUploadingLogo(true); setMessage(null); setError(null);
+    try {
+      const form = new FormData(); form.append("file", file);
+      const response = await fetch("/api/cloud/branding/logo", { method: "POST", body: form });
+      const data = await response.json() as { company?: CloudCompany; logoUrl?: string; error?: string };
+      if (!response.ok || !data.company) throw new Error(data.error ?? "Unable to upload logo.");
+      setOverview((current) => ({ ...(current ?? {}), company: { ...(current?.company ?? company), ...data.company } as CloudCompany }));
+      tenant.setCompany(data.company as never);
+      setSettings((current) => ({ ...current, logoUrl: data.logoUrl ?? "" }));
+      setMessage("Company logo updated.");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to upload logo."); }
+    finally { setUploadingLogo(false); }
+  }
+
+  async function removeLogo() {
+    setUploadingLogo(true); setMessage(null); setError(null);
+    try {
+      const response = await fetch("/api/cloud/branding/logo", { method: "DELETE" });
+      const data = await response.json() as { company?: CloudCompany; error?: string };
+      if (!response.ok || !data.company) throw new Error(data.error ?? "Unable to remove logo.");
+      setOverview((current) => ({ ...(current ?? {}), company: { ...(current?.company ?? company), ...data.company } as CloudCompany }));
+      tenant.setCompany(data.company as never);
+      setSettings((current) => ({ ...current, logoUrl: "" }));
+      setMessage("Company logo removed.");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to remove logo."); }
+    finally { setUploadingLogo(false); }
   }
 
   async function startBillingCheckout(plan: CloudBillingPlan) {
@@ -249,10 +316,7 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
     <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[260px_1fr]">
         <aside className="glass rounded-md border p-4 lg:sticky lg:top-24 lg:self-start">
-          <Link href={"/" as Route} className="text-xl font-black">
-            Fly Logistics Cloud
-          </Link>
-          <p className="mt-2 text-sm text-muted-foreground">Multi-tenant logistics workspace</p>
+          <div className="flex items-center gap-3">{company?.logo_url ? <div className="relative h-10 w-20"><Image src={company.logo_url} alt={`${company.name} logo`} fill sizes="80px" className="object-contain object-left" unoptimized /></div> : <div className="grid size-10 place-items-center rounded-md bg-primary font-black text-primary-foreground">{company?.name?.slice(0, 2).toUpperCase() ?? "FL"}</div>}<div><Link href={"/cloud/dashboard" as Route} className="font-black">{company?.name ?? "Fly Logistics Cloud"}</Link><p className="text-xs text-muted-foreground">Cloud workspace</p></div></div>
           <nav className="mt-5 grid max-h-[60vh] gap-2 overflow-y-auto pr-1">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -290,7 +354,7 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                 <Link href={"/cloud/billing" as Route}>Billing</Link>
               </Button>
               <Button asChild variant="outline">
-                <Link href={"/customer/login" as Route}>Customer portal</Link>
+                <Link href={(company?.slug ? `/cloud/portal/${company.slug}` : "/cloud/settings") as Route}>Customer portal</Link>
               </Button>
             </div>
           </div>
@@ -339,10 +403,10 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                 </CardHeader>
                 <CardContent className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                   {onboardingItems.map((item) => (
-                    <div key={item.label} className="flex items-center gap-2 rounded-md border bg-background/45 p-3 text-sm">
+                    <Link key={item.label} href={item.href} className="flex items-center gap-2 rounded-md border bg-background/45 p-3 text-sm transition hover:border-primary/60 hover:bg-primary/5">
                       <CheckCircle2 className={`size-4 ${item.done ? "text-emerald-500" : "text-muted-foreground"}`} />
                       <span className={item.done ? "text-foreground" : "text-muted-foreground"}>{item.label}</span>
-                    </div>
+                    </Link>
                   ))}
                 </CardContent>
               </Card>
@@ -352,30 +416,31 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
           )}
 
           {!loading && section === "shipments" && (
-            <CloudList title="Company shipments" rows={overview?.recentShipments ?? []} primaryKey="tracking_id" secondaryKey="status" />
+            <CloudShipmentsWorkspace />
+          )}
+
+          {!loading && section === "operations" && (
+            <CloudDispatchWorkspace />
           )}
 
           {!loading && section === "drivers" && (
-            <CloudEmpty title="Driver operations" description="No drivers added yet." />
+            <CloudDriversWorkspace />
           )}
 
           {!loading && section === "customers" && (
-            <CloudList title="Recent members" rows={overview?.members ?? []} primaryKey="user_id" secondaryKey="role" />
+            <CloudCustomersWorkspace />
           )}
 
           {!loading && section === "analytics" && (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {Object.entries(metricLabels).map(([key, label]) => (
-                <Card key={key} className="glass">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-muted-foreground">{label}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-black">{metrics[key] ?? 0}</div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <CloudAnalyticsWorkspace />
+          )}
+
+          {!loading && section === "team" && (
+            <CloudTeamWorkspace />
+          )}
+
+          {!loading && section === "rates" && (
+            <CloudRatesWorkspace />
           )}
 
           {!loading && section === "billing" && (
@@ -400,10 +465,9 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                   <BillingStat label="Last billing" value={company?.last_billing_status ?? "Not started"} />
                 </CardContent>
               </Card>
-              <div className="grid gap-4 md:grid-cols-4">
-                <BillingStat label="MRR" value={money(overview?.billingAnalytics?.monthlyRecurringRevenue)} />
-                <BillingStat label="Active subscriptions" value={String(overview?.billingAnalytics?.activeSubscriptions ?? 0)} />
-                <BillingStat label="Churn rate" value={`${overview?.billingAnalytics?.churnRate ?? 0}%`} />
+              <div className="grid gap-4 md:grid-cols-3">
+                <BillingStat label="Team usage" value={`${overview?.usage?.members ?? 0} / ${currentPlan.maxUsers ?? "Unlimited"}`} />
+                <BillingStat label="Driver usage" value={`${overview?.usage?.drivers ?? 0} / ${currentPlan.maxDrivers ?? "Unlimited"}`} />
                 <BillingStat label="Plan limits" value={`${cloudLimitLabel(currentPlan.maxUsers, "users")} / ${cloudLimitLabel(currentPlan.maxDrivers, "drivers")}`} />
               </div>
               <div className="grid gap-4 lg:grid-cols-3">
@@ -506,7 +570,7 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="brandColor">Brand color</Label>
-                        <Input id="brandColor" value={settings.brandColor} onChange={(event) => setSettings((current) => ({ ...current, brandColor: event.target.value }))} />
+                        <Input id="brandColor" type="color" value={settings.brandColor} onChange={(event) => setSettings((current) => ({ ...current, brandColor: event.target.value }))} />
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="supportEmail">Support email</Label>
@@ -516,10 +580,39 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                         <Label htmlFor="supportPhone">Support phone</Label>
                         <Input id="supportPhone" value={settings.supportPhone} onChange={(event) => setSettings((current) => ({ ...current, supportPhone: event.target.value }))} />
                       </div>
-                      <div className="grid gap-2 md:col-span-2">
-                        <Label htmlFor="logoUrl">Logo URL</Label>
-                        <Input id="logoUrl" value={settings.logoUrl} onChange={(event) => setSettings((current) => ({ ...current, logoUrl: event.target.value }))} />
+                      <div className="grid gap-3 rounded-md border p-4 md:col-span-2">
+                        <Label htmlFor="companyLogo">Company logo</Label>
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                          <div className="relative grid h-24 w-full max-w-56 place-items-center overflow-hidden rounded-md border bg-background/50 p-3">
+                            {settings.logoUrl ? <Image src={settings.logoUrl} alt="Company logo preview" fill sizes="224px" className="object-contain p-3" unoptimized /> : <span className="text-sm text-muted-foreground">No logo uploaded</span>}
+                          </div>
+                          <div className="flex flex-1 flex-wrap gap-2">
+                            <Label htmlFor="companyLogo" className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground">
+                              {uploadingLogo ? <Loader2 className="size-4 animate-spin" /> : <ImageUp className="size-4" />}
+                              Upload logo
+                            </Label>
+                            <Input id="companyLogo" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" disabled={uploadingLogo} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadLogo(file); event.currentTarget.value = ""; }} />
+                            {settings.logoUrl && <Button type="button" variant="outline" disabled={uploadingLogo} onClick={() => void removeLogo()}><Trash2 className="size-4"/>Remove</Button>}
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">PNG, JPEG, or WebP. Maximum 5 MB. Horizontal and square logos are supported.</p>
                       </div>
+                      <div className="grid gap-2 md:col-span-2"><Label htmlFor="businessAddress">Business address</Label><Input id="businessAddress" value={settings.businessAddress} onChange={(event) => setSettings((current) => ({ ...current, businessAddress: event.target.value }))} /></div>
+                      <div className="grid gap-2"><Label htmlFor="country">Country</Label><Input id="country" value={settings.country} onChange={(event) => setSettings((current) => ({ ...current, country: event.target.value }))} /></div>
+                      <div className="grid gap-2"><Label htmlFor="timezone">Timezone</Label><Input id="timezone" value={settings.timezone} onChange={(event) => setSettings((current) => ({ ...current, timezone: event.target.value }))} /></div>
+                      <div className="grid gap-2"><Label htmlFor="currency">Currency</Label><Input id="currency" maxLength={3} value={settings.currency} onChange={(event) => setSettings((current) => ({ ...current, currency: event.target.value.toUpperCase() }))} /></div>
+                      <div className="grid gap-2"><Label htmlFor="accentColor">Accent color</Label><Input id="accentColor" type="color" value={settings.accentColor || settings.brandColor} onChange={(event) => setSettings((current) => ({ ...current, accentColor: event.target.value }))} /></div>
+                    </div>
+                    <div className="grid gap-4 rounded-md border p-4">
+                      <div><h3 className="font-black">Public contact details</h3><p className="text-sm text-muted-foreground">Only these approved business contacts can appear on your public tracking page.</p></div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="grid gap-2 md:col-span-2"><Label htmlFor="publicAddress">Public business address</Label><Input id="publicAddress" maxLength={300} value={settings.publicAddress} onChange={(event) => setSettings((current) => ({ ...current, publicAddress: event.target.value }))}/></div>
+                        <div className="grid gap-2"><Label htmlFor="publicPhone">Public telephone</Label><Input id="publicPhone" type="tel" inputMode="tel" value={settings.publicPhone} onChange={(event) => setSettings((current) => ({ ...current, publicPhone: event.target.value }))}/></div>
+                        <div className="grid gap-2"><Label htmlFor="publicWhatsapp">Public WhatsApp</Label><Input id="publicWhatsapp" type="tel" inputMode="tel" value={settings.publicWhatsapp} onChange={(event) => setSettings((current) => ({ ...current, publicWhatsapp: event.target.value }))}/></div>
+                        <div className="grid gap-2 md:col-span-2"><Label htmlFor="publicSupportEmail">Public support email</Label><Input id="publicSupportEmail" type="email" value={settings.publicSupportEmail} onChange={(event) => setSettings((current) => ({ ...current, publicSupportEmail: event.target.value }))}/></div>
+                      </div>
+                      <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border p-3"><input type="checkbox" checked={settings.showContactOnTracking} onChange={(event) => setSettings((current) => ({ ...current, showContactOnTracking: event.target.checked }))}/><span className="font-semibold">Show public contact information on tracking pages</span></label>
+                      <div className="rounded-md border bg-background/45 p-4"><p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Tracking page preview</p><p className="mt-2 font-black">{settings.name || "Your company"}</p><p className="mt-2 text-sm text-muted-foreground">{settings.publicAddress || "Public address will appear here"}</p><p className="text-sm text-muted-foreground">{settings.publicPhone || settings.publicWhatsapp || settings.publicSupportEmail || "Add a public contact method"}</p></div>
                     </div>
                     <Button type="submit" disabled={saving}>
                       {saving ? <Loader2 className="animate-spin" /> : <Settings />}
@@ -566,19 +659,6 @@ function CloudList({ title, rows, primaryKey, secondaryKey }: { title: string; r
             </div>
           ))
         )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function CloudEmpty({ title, description }: { title: string; description: string }) {
-  return (
-    <Card className="glass">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="rounded-md border p-4 text-sm text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
   );

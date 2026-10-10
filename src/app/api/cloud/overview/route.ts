@@ -23,11 +23,6 @@ function tableMissing(error: { code?: string; message?: string } | null | undefi
   return error?.code === "42P01" || error?.code === "42703" || error?.code === "PGRST204" || message.includes("could not find");
 }
 
-function moneyValue(value: unknown) {
-  const amount = Number(value ?? 0);
-  return Number.isFinite(amount) ? amount : 0;
-}
-
 export async function GET(request: Request) {
   const limited = await enforceRateLimit(request, "cloud-overview", { limit: 80, windowSeconds: 60 });
   if (limited) return limited;
@@ -54,11 +49,11 @@ export async function GET(request: Request) {
     subscriptions
   ] = await Promise.all([
     countRows(supabase, "shipments", companyId),
-    countRows(supabase, "shipments", companyId, { status: "IN_TRANSIT" }),
+    supabase.from("shipments").select("id", { count: "exact", head: true }).eq("company_id", companyId).in("status", ["PENDING", "CONFIRMED", "DRIVER_ASSIGNED", "PICKED_UP", "IN_TRANSIT", "ARRIVED", "OUT_FOR_DELIVERY"]),
     countRows(supabase, "shipments", companyId, { status: "DELIVERED" }),
     countRows(supabase, "quote_requests", companyId),
     countRows(supabase, "drivers", companyId),
-    supabase.from("company_members").select("id", { count: "exact", head: true }).eq("company_id", companyId).eq("role", "customer"),
+    supabase.from("cloud_customers").select("id", { count: "exact", head: true }).eq("company_id", companyId),
     supabase
       .from("shipments")
       .select("id,tracking_id,customer_name,pickup_address,delivery_address,status,carrier_provider,updated_at,created_at")
@@ -73,7 +68,7 @@ export async function GET(request: Request) {
       .limit(8),
     supabase
       .from("company_members")
-      .select("id,user_id,role,created_at")
+      .select("id,user_id,role,created_at", { count: "exact" })
       .eq("company_id", companyId)
       .order("created_at", { ascending: false })
       .limit(8),
@@ -86,13 +81,6 @@ export async function GET(request: Request) {
   ]);
 
   const subscriptionRows = tableMissing(subscriptions.error) ? [] : subscriptions.data ?? [];
-  const activeSubscriptions = subscriptionRows.filter((row) => String(row.status ?? "").toLowerCase() === "active");
-  const cancelledSubscriptions = subscriptionRows.filter((row) => ["cancelled", "expired"].includes(String(row.status ?? "").toLowerCase()));
-  const revenueByPlan = subscriptionRows.reduce<Record<string, number>>((acc, row) => {
-    const plan = String(row.plan ?? "starter");
-    if (String(row.status ?? "").toLowerCase() === "active") acc[plan] = (acc[plan] ?? 0) + moneyValue(row.amount);
-    return acc;
-  }, {});
 
   return NextResponse.json({
     company: access.tenant.company,
@@ -109,11 +97,11 @@ export async function GET(request: Request) {
     recentQuotes: recentQuotes.error ? [] : recentQuotes.data ?? [],
     members: members.error ? [] : members.data ?? [],
     billingHistory: subscriptionRows,
-    billingAnalytics: {
-      monthlyRecurringRevenue: activeSubscriptions.reduce((sum, row) => sum + moneyValue(row.amount), 0),
-      activeSubscriptions: activeSubscriptions.length,
-      churnRate: subscriptionRows.length ? Math.round((cancelledSubscriptions.length / subscriptionRows.length) * 1000) / 10 : 0,
-      revenueByPlan
+    usage: {
+      members: members.count ?? members.data?.length ?? 0,
+      drivers: drivers.count,
+      customers: customers.count ?? 0,
+      shipments: shipments.count
     },
     warnings: [
       shipments.error,

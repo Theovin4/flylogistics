@@ -69,9 +69,9 @@ export default function CloudLandingPage() {
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
                   {[
-                    ["1,248", "Shipments"],
-                    ["97%", "On-time"],
-                    ["24/7", "Support"]
+                    ["Private", "Company workspace"],
+                    ["Live", "Shipment visibility"],
+                    ["14 days", "Free trial"]
                   ].map(([value, label]) => (
                     <div key={label} className="rounded-md border bg-card p-4">
                       <div className="text-2xl font-black">{value}</div>

@@ -251,7 +251,7 @@ export function RoleAccessForm({
             emailRedirectTo: `${canonicalSiteUrl}${portalForRole(signupRole)}`,
             data: {
               full_name: form.fullName,
-              company: form.company,
+              company: signupRole === "customer" ? undefined : form.company,
               phone: form.phone,
               vehicle_type: signupRole === "driver" ? form.vehicleType : undefined,
               role: signupRole
@@ -274,7 +274,7 @@ export function RoleAccessForm({
                   userId: data.user.id,
                   email: form.email.trim(),
                   fullName: form.fullName,
-                  company: form.company,
+                  company: signupRole === "customer" ? undefined : form.company,
                   phone: form.phone,
                   vehicleType: signupRole === "driver" ? form.vehicleType : undefined,
                   role: signupRole
@@ -362,10 +362,12 @@ export function RoleAccessForm({
                         <Label htmlFor="fullName">Full name</Label>
                         <Input id="fullName" value={form.fullName} onChange={(event) => updateField("fullName", event.target.value)} required />
                       </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="company">Company</Label>
-                        <Input id="company" value={form.company} onChange={(event) => updateField("company", event.target.value)} />
-                      </div>
+                      {role !== "customer" && (
+                        <div className="grid gap-2">
+                          <Label htmlFor="company">Company</Label>
+                          <Input id="company" value={form.company} onChange={(event) => updateField("company", event.target.value)} />
+                        </div>
+                      )}
                       <div className="grid gap-2">
                         <Label htmlFor="phone">Phone</Label>
                         <Input id="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+234 706 107 2929" value={form.phone} onChange={(event) => updateField("phone", event.target.value)} required />
