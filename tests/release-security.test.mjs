@@ -109,7 +109,7 @@ test("cloud operations enforce company roles and tenant row filters", () => {
   const shipmentUpdate = read("src/app/api/shipments/[trackingId]/route.ts");
   assert.match(shipmentUpdate, /driverQuery\s*=\s*driverQuery\.eq\("company_id",\s*tenant\.companyId\)/, "Driver assignment is not company-scoped");
   assert.match(shipmentUpdate, /enforceRateLimit\(request,\s*"shipment-update"/, "Shipment updates are not rate limited");
-  assert.equal(existsSync(join(root, "src/app/cloud/operations/page.tsx")), true, "Cloud operations page is missing");
+  assert.equal(existsSync(join(root, "src/app/cloud/(workspace)/operations/page.tsx")), true, "Cloud operations page is missing");
   assert.match(read("src/components/cloud/cloud-operations-workspace.tsx"), /export function CloudDispatchWorkspace/);
 });
 
@@ -136,7 +136,7 @@ test("cloud public tracking is tenant-scoped and customer-safe", () => {
 });
 
 test("cloud branding is resolved before workspace hydration", () => {
-  const layout = read("src/app/cloud/layout.tsx");
+  const layout = read("src/app/cloud/(workspace)/layout.tsx");
   const provider = read("src/components/cloud/cloud-tenant-context.tsx");
   const dashboard = read("src/components/cloud/cloud-dashboard.tsx");
   assert.match(layout, /resolveFreshProfileFromAccessToken/);
@@ -147,13 +147,23 @@ test("cloud branding is resolved before workspace hydration", () => {
   assert.doesNotMatch(dashboard, /style=\{company\?\.brand_color/);
 });
 
+test("cloud marketing stays static while authenticated workspaces resolve tenant state", () => {
+  assert.equal(existsSync(join(root, "src/app/cloud/layout.tsx")), false, "A dynamic root Cloud layout would force public marketing pages to render per request");
+  assert.equal(existsSync(join(root, "src/app/cloud/(workspace)/layout.tsx")), true, "The authenticated Cloud workspace layout is missing");
+  for (const route of ["page.tsx", "pricing/page.tsx", "features/page.tsx", "demo/page.tsx"]) {
+    assert.equal(existsSync(join(root, "src/app/cloud", route)), true, `Public Cloud route ${route} is missing`);
+  }
+});
+
 test("cloud brand assets are tenant-authorized and content validated", () => {
   const upload = read("src/app/api/cloud/branding/logo/route.ts");
+  const dashboard = read("src/components/cloud/cloud-dashboard.tsx");
   assert.match(upload, /requireCompanyRole\(request, \["owner", "admin"\]\)/);
   assert.match(upload, /MAX_LOGO_BYTES = 5_000_000/);
   assert.match(upload, /detectedFormat/);
   assert.match(upload, /company-media\/\$\{companyId\}\/logo/);
   assert.doesNotMatch(upload, /paramsToSign/);
+  assert.match(dashboard, /credentials:\s*"same-origin"/);
 });
 
 test("cloud public contacts expose only explicit safe tenant fields", () => {

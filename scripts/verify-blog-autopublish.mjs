@@ -50,7 +50,7 @@ const readiness = {
   serviceRoleKey: Boolean(serviceRoleKey),
   groqKey: Boolean(process.env.GROQ_API_KEY),
   cronSecret: Boolean(process.env.CRON_SECRET),
-  model: process.env.BLOG_GROQ_MODEL || "llama-3.3-70b-versatile",
+  model: process.env.BLOG_GROQ_MODEL || process.env.GROQ_MODEL || null,
   timezone,
   switchDate,
   today,
@@ -59,6 +59,9 @@ const readiness = {
 
 if (!url || !serviceRoleKey) {
   console.log(JSON.stringify({ ok: false, readiness, error: "Missing Supabase env." }, null, 2));
+  process.exitCode = 1;
+} else if (!readiness.model) {
+  console.log(JSON.stringify({ ok: false, readiness, error: "BLOG_GROQ_MODEL or GROQ_MODEL is not configured." }, null, 2));
   process.exitCode = 1;
 } else {
   const supabase = createClient(url, serviceRoleKey, {

@@ -217,7 +217,11 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
     setUploadingLogo(true); setMessage(null); setError(null);
     try {
       const form = new FormData(); form.append("file", file);
-      const response = await fetch("/api/cloud/branding/logo", { method: "POST", body: form });
+      const response = await fetch("/api/cloud/branding/logo", {
+        method: "POST",
+        credentials: "same-origin",
+        body: form
+      });
       const data = await response.json() as { company?: CloudCompany; logoUrl?: string; error?: string };
       if (!response.ok || !data.company) throw new Error(data.error ?? "Unable to upload logo.");
       setOverview((current) => ({ ...(current ?? {}), company: { ...(current?.company ?? company), ...data.company } as CloudCompany }));
@@ -231,7 +235,10 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
   async function removeLogo() {
     setUploadingLogo(true); setMessage(null); setError(null);
     try {
-      const response = await fetch("/api/cloud/branding/logo", { method: "DELETE" });
+      const response = await fetch("/api/cloud/branding/logo", {
+        method: "DELETE",
+        credentials: "same-origin"
+      });
       const data = await response.json() as { company?: CloudCompany; error?: string };
       if (!response.ok || !data.company) throw new Error(data.error ?? "Unable to remove logo.");
       setOverview((current) => ({ ...(current ?? {}), company: { ...(current?.company ?? company), ...data.company } as CloudCompany }));
