@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit } from "@/server/api";
-import { requireCompanyRole } from "@/server/tenancy";
+import { requireCloudFeature } from "@/server/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ function amount(value: unknown) {
 export async function GET(request: Request) {
   const limited = await enforceRateLimit(request, "cloud-analytics", { limit: 60, windowSeconds: 60 });
   if (limited) return limited;
-  const access = await requireCompanyRole(request, ["owner", "admin", "dispatcher"]);
+  const access = await requireCloudFeature(request, "advanced_analytics", ["owner", "admin", "dispatcher"]);
   if (!access.profile || !access.tenant || access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   const supabase = getSupabaseAdmin();
   if (!supabase || !access.tenant.companyId) return NextResponse.json({ error: "Analytics are temporarily unavailable." }, { status: 503 });

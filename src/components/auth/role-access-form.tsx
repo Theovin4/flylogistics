@@ -118,7 +118,7 @@ function requestedNext(role: FlyRole) {
   const portal = portalForRole(role);
   if (!next?.startsWith("/")) return portal;
   if (next.startsWith(portal)) return next;
-  if (role === "admin" && (next === "/dashboard" || next.startsWith("/dashboard/admin"))) return next;
+  if (role === "admin" && (next === "/dashboard" || next.startsWith("/dashboard/admin") || next.startsWith("/admin/"))) return next;
   if (role === "driver" && next.startsWith("/dashboard/driver")) return next;
   if (role === "dispatcher" && next.startsWith("/dashboard/dispatcher")) return next;
   if (role === "customer" && next.startsWith("/dashboard/customer")) return next;
@@ -126,6 +126,7 @@ function requestedNext(role: FlyRole) {
 }
 
 function canUseAccessPage(pageRole: AccessFormRole, resolvedRole: FlyRole) {
+  if (pageRole === "admin") return isInternalAdminRole(resolvedRole);
   return normalizeRole(pageRole) === resolvedRole;
 }
 

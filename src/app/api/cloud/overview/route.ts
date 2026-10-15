@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit } from "@/server/api";
-import { requireCompanyRole } from "@/server/tenancy";
+import { getTenantEntitlements, requireCompanyRole } from "@/server/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -81,10 +81,19 @@ export async function GET(request: Request) {
   ]);
 
   const subscriptionRows = tableMissing(subscriptions.error) ? [] : subscriptions.data ?? [];
+  const entitlements = getTenantEntitlements(access.tenant);
 
   return NextResponse.json({
     company: access.tenant.company,
     role: access.tenant.companyRole,
+    entitlements: {
+      plan: entitlements.plan,
+      billingStatus: entitlements.billingStatus,
+      trialActive: entitlements.trialActive,
+      accessState: entitlements.accessState,
+      limits: entitlements.limits,
+      features: [...entitlements.features]
+    },
     metrics: {
       shipments: shipments.count,
       activeShipments: activeShipments.count,

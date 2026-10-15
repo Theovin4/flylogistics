@@ -4,7 +4,7 @@ import { getCloudinary } from "@/lib/cloudinary";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit } from "@/server/api";
 import { logApiError, requestContext } from "@/server/monitoring";
-import { requireCompanyRole } from "@/server/tenancy";
+import { requireCloudFeature } from "@/server/tenancy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ function detectedFormat(bytes: Uint8Array) {
 }
 
 async function authorize(request: Request) {
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "basic_branding", ["owner", "admin"]);
   if (!access.profile || !access.tenant || access.error || !access.tenant.companyId) return { access, response: NextResponse.json({ error: access.error ?? "Company workspace is not configured." }, { status: access.status || 403 }) };
   return { access, response: null };
 }

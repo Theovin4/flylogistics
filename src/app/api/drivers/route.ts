@@ -10,12 +10,12 @@ import {
   optionalDriverColumns
 } from "@/lib/driver-data";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { getCloudBillingPlan, isCloudPlanLimitReached } from "@/lib/cloud-plans";
+import { isCloudPlanLimitReached } from "@/lib/cloud-plans";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
 import { logApiError, requestContext } from "@/server/monitoring";
 import { writeOperationalEvent } from "@/server/operational-events";
-import { getTenantContextForProfile, requireCompanyRole, withCompanyId } from "@/server/tenancy";
+import { getTenantContextForProfile, requireCloudFeature, requireCompanyRole, withCompanyId } from "@/server/tenancy";
 
 type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
   const limited = await enforceRateLimit(request, "drivers-create", { limit: 30, windowSeconds: 60 });
   if (limited) return limited;
 
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "team_management", ["owner", "admin"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -134,16 +134,16 @@ export async function POST(request: Request) {
   const tenant = await getTenantContextForProfile(supabase, access.profile);
 
   if (tenant.schemaReady && tenant.companyId && tenant.company) {
-    const plan = getCloudBillingPlan(tenant.company.subscription_plan ?? tenant.company.plan);
-    if (plan.maxDrivers !== null) {
+    const driverLimit = access.entitlements?.limits.drivers ?? null;
+    if (driverLimit !== null) {
       const driverCount = await supabase
         .from("drivers")
         .select("id", { count: "exact", head: true })
         .eq("company_id", tenant.companyId);
 
-      if (!driverCount.error && isCloudPlanLimitReached(driverCount.count ?? 0, plan.maxDrivers)) {
+      if (!driverCount.error && isCloudPlanLimitReached(driverCount.count ?? 0, driverLimit)) {
         return NextResponse.json(
-          { error: `${plan.name} plan allows up to ${plan.maxDrivers} drivers. Upgrade your Fly Logistics Cloud plan to add more drivers.` },
+          { error: `${access.entitlements?.plan ?? "Current"} plan allows up to ${driverLimit} drivers. Upgrade your Fly Logistics Cloud plan to add more drivers.` },
           { status: 403 }
         );
       }

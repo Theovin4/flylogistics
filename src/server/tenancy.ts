@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { hasCloudFeature, resolveCloudEntitlements, type CloudFeature } from "@/lib/cloud-plans";
 import type { AuthProfile } from "@/lib/request-auth";
 import { getRequestProfile } from "@/lib/request-auth";
 import type { FlyRole } from "@/lib/roles";
@@ -211,6 +212,44 @@ export async function requireCompanyRole(
     status: 403,
     error: "Your company role does not have access to this workspace action."
   };
+}
+
+export function getTenantEntitlements(tenant: TenantContext | null | undefined) {
+  return resolveCloudEntitlements(tenant?.company, {
+    internalCompanyId: process.env.FLY_INTERNAL_COMPANY_ID?.trim() || null
+  });
+}
+
+export async function requireCloudFeature(
+  request: Request,
+  feature: CloudFeature,
+  allowedRoles: CloudCompanyRole[] = ["owner", "admin", "dispatcher"]
+) {
+  const access = await requireCompanyRole(request, allowedRoles);
+  if (!access.profile || !access.tenant || access.error) return { ...access, entitlements: null };
+
+  const entitlements = getTenantEntitlements(access.tenant);
+  if (entitlements.accessState === "restricted") {
+    return {
+      ...access,
+      entitlements,
+      status: 402,
+      error: entitlements.billingStatus === "expired"
+        ? "Your trial or subscription has expired. Choose a plan to continue."
+        : "Your Cloud subscription requires attention before this action can continue."
+    };
+  }
+
+  if (!hasCloudFeature(entitlements, feature)) {
+    return {
+      ...access,
+      entitlements,
+      status: 403,
+      error: `This feature is not included in the ${entitlements.plan} plan. Upgrade your Cloud plan to continue.`
+    };
+  }
+
+  return { ...access, entitlements };
 }
 
 export function withCompanyId<T extends Record<string, unknown>>(payload: T, companyId?: string | null): T {

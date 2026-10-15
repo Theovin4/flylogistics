@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { adminLoginPath } from "@/lib/admin-access";
+import { adminLoginPath, rolesForAdminPath } from "@/lib/admin-access";
 import { cleanEnv } from "@/lib/env";
-import { canAccessRole, flyRoles, normalizeRole, type FlyRole } from "@/lib/roles";
+import { canAccessRole, flyRoles, normalizeRole, portalForRole, type FlyRole } from "@/lib/roles";
 import { applySecurityHeaders } from "@/lib/security-headers";
 
 const noIndexPrefixes = [
@@ -59,6 +59,7 @@ function dashboardRoles(pathname: string): FlyRole[] {
 
 function protectedRoles(pathname: string): FlyRole[] | null {
   if (pathname === adminLoginPath || pathname === "/admin/login") return null;
+  if (pathname.startsWith("/admin/")) return rolesForAdminPath(pathname) ?? ["admin"];
   if (pathname === "/customer/login" || pathname === "/customer/signup" || pathname === "/customer/register") return null;
   if (pathname === "/driver/login" || pathname === "/driver/register") return null;
   if (pathname === "/dispatcher/login") return null;
@@ -73,6 +74,7 @@ function protectedRoles(pathname: string): FlyRole[] | null {
 }
 
 function loginPathFor(pathname: string) {
+  if (pathname.startsWith("/admin/")) return adminLoginPath;
   if (pathname.startsWith("/customer")) return "/customer/login";
   if (pathname.startsWith("/merchant/dashboard")) return "/customer/login";
   if (pathname.startsWith("/dashboard/customer")) return "/customer/login";
@@ -154,6 +156,20 @@ export async function proxy(request: NextRequest) {
     return new NextResponse(null, { status: 403 });
   }
 
+  const legacyAdminTarget =
+    pathname === "/fly-admin-ops/login"
+      ? adminLoginPath
+      : pathname === "/dashboard" || pathname === "/dashboard/admin"
+        ? "/admin/dashboard"
+        : pathname === "/dashboard/admin/operational-events"
+          ? "/admin/audit"
+          : null;
+  if (legacyAdminTarget) {
+    const canonicalUrl = request.nextUrl.clone();
+    canonicalUrl.pathname = legacyAdminTarget;
+    return secureResponse(NextResponse.redirect(canonicalUrl, 308), request);
+  }
+
   const roles = protectedRoles(pathname);
   if (roles) {
     const session = request.cookies.get("fly_session")?.value;
@@ -166,7 +182,20 @@ export async function proxy(request: NextRequest) {
     }
 
     const role = await sessionRole(session, pathname);
-    if (!role || !canAccessRole(role, roles)) {
+    if (role && !canAccessRole(role, roles)) {
+      const portalUrl = request.nextUrl.clone();
+      portalUrl.pathname = portalForRole(role);
+      portalUrl.search = "";
+      authDebug("proxy:redirecting-to-role-portal", {
+        pathname,
+        resolvedRole: role,
+        requiredRoles: roles,
+        redirectTarget: portalUrl.pathname
+      });
+      return secureResponse(NextResponse.redirect(portalUrl), request);
+    }
+
+    if (!role) {
       const response = NextResponse.redirect(loginUrl);
       authDebug("proxy:redirecting-for-role", {
         pathname,

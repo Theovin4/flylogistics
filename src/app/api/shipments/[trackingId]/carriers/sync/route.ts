@@ -3,7 +3,6 @@ import { z } from "zod";
 import { carrierProviders, isExternalCarrierProvider, normalizeCarrierProvider } from "@/lib/carriers";
 import { fetchShipmentByTracking } from "@/lib/shipment-data";
 import { shipmentMarginPercent, shipmentProfit } from "@/lib/shipment-finance";
-import { requireRole } from "@/lib/request-auth";
 import { customerTrackingMessageForCarrierStatus, mapCarrierStatusToFlyStatus } from "@/lib/tracking-status";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { handleApiError, parseJson } from "@/server/api";
@@ -13,6 +12,7 @@ import { refreshCarrierTrackingForFlyNumber } from "@/server/carrier-tracking";
 import { syncCarrierShipment } from "@/server/carriers";
 import { logApiError, requestContext } from "@/server/monitoring";
 import { writeOperationalEvent } from "@/server/operational-events";
+import { requireCloudFeature } from "@/server/tenancy";
 
 const syncCarrierSchema = z.object({
   provider: z.enum(carrierProviders).optional()
@@ -21,7 +21,7 @@ const syncCarrierSchema = z.object({
 export async function POST(request: Request, { params }: { params: Promise<{ trackingId: string }> }) {
   try {
     const { trackingId } = await params;
-    const access = await requireRole(request, ["admin", "dispatcher"]);
+    const access = await requireCloudFeature(request, "operations", ["owner", "admin", "dispatcher"]);
     if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
     if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -37,6 +37,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
       return NextResponse.json({ error: "Unable to load shipment for carrier sync." }, { status: 500 });
     }
     if (!current.data) return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
+    if (access.tenant?.schemaReady && access.tenant.companyId && (current.data as { company_id?: string | null }).company_id !== access.tenant.companyId) {
+      return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
+    }
 
     const shipmentForSync = parsed.data.provider ? { ...current.data, carrier_provider: parsed.data.provider } : current.data;
     const selectedProvider = normalizeCarrierProvider(shipmentForSync.carrier_provider ?? shipmentForSync.carrier);

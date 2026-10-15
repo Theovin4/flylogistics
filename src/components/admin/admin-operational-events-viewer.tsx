@@ -147,7 +147,7 @@ export function AdminOperationalEventsViewer() {
             <div className="flex items-center justify-between gap-3">
               <Logo />
               <Button asChild variant="outline" size="sm" className="sm:hidden">
-                <Link href={"/dashboard/admin" as NextRoute}>
+                <Link href={"/admin/dashboard" as NextRoute}>
                   <ArrowLeft />
                   Admin
                 </Link>
@@ -155,7 +155,7 @@ export function AdminOperationalEventsViewer() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
-                <Link href={"/dashboard/admin" as NextRoute}>
+                <Link href={"/admin/dashboard" as NextRoute}>
                   <ArrowLeft />
                   Admin dashboard
                 </Link>

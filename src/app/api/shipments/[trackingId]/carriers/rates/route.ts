@@ -3,12 +3,12 @@ import { z } from "zod";
 import { carrierProviders, isExternalCarrierProvider, normalizeCarrierProvider } from "@/lib/carriers";
 import { shipmentMarginPercent, shipmentProfit } from "@/lib/shipment-finance";
 import { fetchShipmentByTracking } from "@/lib/shipment-data";
-import { requireRole } from "@/lib/request-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { handleApiError, parseJson } from "@/server/api";
 import { updateShipmentCarrierFields } from "@/server/carrier-storage";
 import { getCarrierRates } from "@/server/carriers";
 import { logApiError, requestContext } from "@/server/monitoring";
+import { requireCloudFeature } from "@/server/tenancy";
 
 const carrierRatesSchema = z.object({
   provider: z.enum(carrierProviders).optional(),
@@ -18,7 +18,7 @@ const carrierRatesSchema = z.object({
 export async function POST(request: Request, { params }: { params: Promise<{ trackingId: string }> }) {
   try {
     const { trackingId } = await params;
-    const access = await requireRole(request, ["admin", "dispatcher"]);
+    const access = await requireCloudFeature(request, "operations", ["owner", "admin", "dispatcher"]);
     if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
     if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -34,6 +34,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
       return NextResponse.json({ error: "Unable to load shipment for carrier rates." }, { status: 500 });
     }
     if (!current.data) return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
+    if (access.tenant?.schemaReady && access.tenant.companyId && (current.data as { company_id?: string | null }).company_id !== access.tenant.companyId) {
+      return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
+    }
 
     const providers = parsed.data.providers ?? (parsed.data.provider ? [parsed.data.provider] : undefined);
     const result = await getCarrierRates(current.data, providers);

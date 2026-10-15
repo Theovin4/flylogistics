@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-type TenantRateCard = {
+export type TenantRateCard = {
   id: string;
   name: string;
   service_type: string;
@@ -12,6 +12,7 @@ type TenantRateCard = {
   currency: string;
   eta_min_hours: number | null;
   eta_max_hours: number | null;
+  created_at?: string | null;
 };
 
 function normalized(value?: string | null) {
@@ -21,6 +22,44 @@ function normalized(value?: string | null) {
 function zoneMatches(configured: string | null, actual?: string | null) {
   const rule = normalized(configured);
   return !rule || rule === "all" || rule === "*" || rule === normalized(actual);
+}
+
+function matchSpecificity(rate: TenantRateCard, pickupZone?: string | null, destinationZone?: string | null) {
+  let score = 0;
+  const origin = normalized(rate.origin_zone);
+  const destination = normalized(rate.destination_zone);
+  if (origin && origin !== "all" && origin !== "*" && origin === normalized(pickupZone)) score += 2;
+  if (destination && destination !== "all" && destination !== "*" && destination === normalized(destinationZone)) score += 2;
+  return score;
+}
+
+export function calculateTenantPriceFromRates(
+  rates: TenantRateCard[],
+  input: { pickupZone?: string | null; destinationZone?: string | null; weightKg: number }
+) {
+  const rate = rates
+    .filter((item) => zoneMatches(item.origin_zone, input.pickupZone) && zoneMatches(item.destination_zone, input.destinationZone))
+    .sort((a, b) => {
+      const specificity = matchSpecificity(b, input.pickupZone, input.destinationZone) - matchSpecificity(a, input.pickupZone, input.destinationZone);
+      if (specificity !== 0) return specificity;
+      return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
+    })[0];
+  if (!rate) return null;
+
+  const base = Number(rate.base_price ?? 0);
+  const included = Math.max(0.1, Number(rate.included_weight_kg ?? 1));
+  const extraPrice = Number(rate.extra_kg_price ?? 0);
+  const extraWeight = Math.max(0, input.weightKg - included);
+  const billedExtraWeight = Math.ceil(extraWeight);
+  const extraWeightAmount = Math.round(billedExtraWeight * extraPrice * 100) / 100;
+  const amount = Math.round((base + extraWeightAmount) * 100) / 100;
+  const etaLabel = rate.eta_min_hours && rate.eta_max_hours
+    ? `${rate.eta_min_hours}-${rate.eta_max_hours} hours`
+    : rate.eta_max_hours
+      ? `Within ${rate.eta_max_hours} hours`
+      : null;
+
+  return { ...rate, amount, baseAmount: base, extraWeightKg: billedExtraWeight, extraWeightAmount, etaLabel, etaHours: rate.eta_max_hours ?? rate.eta_min_hours ?? null };
 }
 
 export async function calculateTenantRate(
@@ -35,7 +74,7 @@ export async function calculateTenantRate(
 ) {
   const result = await supabase
     .from("tenant_rate_cards")
-    .select("id,name,service_type,origin_zone,destination_zone,base_price,included_weight_kg,extra_kg_price,currency,eta_min_hours,eta_max_hours")
+    .select("id,name,service_type,origin_zone,destination_zone,base_price,included_weight_kg,extra_kg_price,currency,eta_min_hours,eta_max_hours,created_at")
     .eq("company_id", input.companyId)
     .eq("is_active", true)
     .eq("service_type", input.serviceType)
@@ -47,21 +86,5 @@ export async function calculateTenantRate(
     throw result.error;
   }
 
-  const rate = (result.data as TenantRateCard[] | null)?.find(
-    (item) => zoneMatches(item.origin_zone, input.pickupZone) && zoneMatches(item.destination_zone, input.destinationZone)
-  );
-  if (!rate) return null;
-
-  const base = Number(rate.base_price ?? 0);
-  const included = Math.max(0.1, Number(rate.included_weight_kg ?? 1));
-  const extraPrice = Number(rate.extra_kg_price ?? 0);
-  const extraWeight = Math.max(0, input.weightKg - included);
-  const amount = Math.round((base + Math.ceil(extraWeight) * extraPrice) * 100) / 100;
-  const etaLabel = rate.eta_min_hours && rate.eta_max_hours
-    ? `${rate.eta_min_hours}-${rate.eta_max_hours} hours`
-    : rate.eta_max_hours
-      ? `Within ${rate.eta_max_hours} hours`
-      : null;
-
-  return { ...rate, amount, etaLabel, etaHours: rate.eta_max_hours ?? rate.eta_min_hours ?? null };
+  return calculateTenantPriceFromRates((result.data as TenantRateCard[] | null) ?? [], input);
 }

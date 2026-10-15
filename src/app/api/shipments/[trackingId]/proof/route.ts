@@ -3,7 +3,6 @@ import { z } from "zod";
 import { shipmentCustomerMessage } from "@/lib/shipments";
 import { appendStatusProgressionEvents, fetchShipmentByTracking, shipmentWithDriverSelect } from "@/lib/shipment-data";
 import { whatsappMessages } from "@/lib/whatsapp";
-import { requireRole } from "@/lib/request-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
@@ -12,6 +11,7 @@ import { sendCustomerNotification } from "@/server/notifications/service";
 import { getCustomerNotificationPreferences } from "@/server/notifications/preferences";
 import { writeOperationalEvent } from "@/server/operational-events";
 import { sendShipmentLifecycleEmail } from "@/server/shipment-emails";
+import { requireCloudFeature } from "@/server/tenancy";
 
 const proofSchema = z.object({
   proofImageUrl: z.string().url(),
@@ -86,7 +86,7 @@ async function insertProofEvent(
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ trackingId: string }> }) {
   const { trackingId } = await params;
-  const access = await requireRole(request, ["admin", "dispatcher", "driver"]);
+  const access = await requireCloudFeature(request, "operations", ["owner", "admin", "dispatcher", "driver"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -102,6 +102,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ tr
     return NextResponse.json({ error: "Unable to load shipment before proof upload." }, { status: 500 });
   }
   if (!current.data) {
+    return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
+  }
+  if (access.tenant?.schemaReady && access.tenant.companyId && (current.data as { company_id?: string | null }).company_id !== access.tenant.companyId) {
     return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
   }
 

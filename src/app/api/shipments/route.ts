@@ -38,7 +38,8 @@ import { writeOperationalEvent } from "@/server/operational-events";
 import { calculateLogisticsPrice } from "@/server/pricing";
 import { calculateTenantRate } from "@/server/tenant-pricing";
 import { sendShipmentLifecycleEmail } from "@/server/shipment-emails";
-import { getTenantContextForProfile, requireCompanyRole, withCompanyId } from "@/server/tenancy";
+import { resolveShipmentOwnership, shipmentOwnershipSourceForActor } from "@/server/shipment-ownership";
+import { getTenantContextForProfile, requireCloudFeature, requireCompanyRole, withCompanyId } from "@/server/tenancy";
 
 const shipmentSchema = z.object({
   trackingId: z.string().trim().optional(),
@@ -83,7 +84,8 @@ const shipmentSchema = z.object({
   backdatedAt: z.string().trim().optional(),
   backdateReason: z.string().trim().max(1000).optional(),
   walletAdjustmentType: z.enum(["credit", "debit", "none"]).default("credit"),
-  walletAdjustmentAmount: z.coerce.number().min(0).max(1_000_000_000).optional()
+  walletAdjustmentAmount: z.coerce.number().min(0).max(1_000_000_000).optional(),
+  tenantCompanyId: z.string().uuid().optional()
 }).superRefine((data, context) => {
   if (data.deliveryCategory !== "international_import" && !data.pickupState?.trim()) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["pickupState"], message: "Select the pickup state." });
@@ -254,9 +256,15 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const access = await requireCompanyRole(request, ["owner", "admin", "dispatcher"]);
+    let access = await requireCompanyRole(request, ["owner", "admin", "dispatcher"]);
     if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
     if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
+
+    if (shipmentOwnershipSourceForActor(access.profile) === "cloud_tenant") {
+      access = await requireCloudFeature(request, "shipment_management", ["owner", "admin", "dispatcher"]);
+      if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
+      if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
+    }
 
     const parsed = await parseJson(request, shipmentSchema, "Please complete the shipment form.");
     if (parsed.response) return parsed.response;
@@ -265,7 +273,13 @@ export async function POST(request: Request) {
     if (!supabase) {
       return NextResponse.json({ error: "Shipment operations are temporarily unavailable." }, { status: 503 });
     }
-    const tenant = await getTenantContextForProfile(supabase, access.profile);
+    const tenant = access.tenant ?? await getTenantContextForProfile(supabase, access.profile);
+    const ownership = await resolveShipmentOwnership({
+      supabase,
+      actor: access.profile,
+      tenant,
+      explicitlySelectedTenantId: parsed.data.tenantCompanyId
+    });
 
   let verifiedDriverVehicleType: string | null = null;
 
@@ -274,7 +288,7 @@ export async function POST(request: Request) {
       .from("drivers")
       .select("id,approval_status,vehicle_type")
       .eq("id", Number(parsed.data.driverId));
-    if (tenant.schemaReady && tenant.companyId) driver = driver.eq("company_id", tenant.companyId);
+    driver = driver.eq("company_id", ownership.companyId);
     let driverResult = await driver.maybeSingle();
 
     if (missingDriverColumn(driverResult.error) === "approval_status") {
@@ -282,7 +296,7 @@ export async function POST(request: Request) {
         .from("drivers")
         .select("id,vehicle_type")
         .eq("id", Number(parsed.data.driverId));
-      if (tenant.schemaReady && tenant.companyId) fallbackDriver = fallbackDriver.eq("company_id", tenant.companyId);
+      fallbackDriver = fallbackDriver.eq("company_id", ownership.companyId);
       driverResult = await fallbackDriver.maybeSingle();
     }
 
@@ -320,9 +334,9 @@ export async function POST(request: Request) {
     customsInformation: parsed.data.customsInformation,
     exportImportDocuments: parsed.data.exportImportDocuments
   }, supabase);
-  const tenantRate = tenant.schemaReady && tenant.companyId && tenant.company?.slug !== "fly-logistics"
+  const tenantRate = ownership.source === "cloud_tenant"
     ? await calculateTenantRate(supabase, {
-        companyId: tenant.companyId,
+        companyId: ownership.companyId,
         serviceType: deliveryCategory,
         pickupZone: parsed.data.pickupState ?? parsed.data.pickupCountry,
         destinationZone: parsed.data.destinationState ?? parsed.data.destinationCountry,
@@ -472,7 +486,7 @@ export async function POST(request: Request) {
     customer_status_message: shipmentCustomerMessage(status),
     timeline,
     ...(backdatedAt ? { created_at: backdatedAt } : {})
-  }, tenant.companyId);
+  }, ownership.companyId);
 
   const { data, error, removedColumns } = await insertShipmentWithSchemaFallback(supabase, payload);
   if (error) {
@@ -726,7 +740,7 @@ export async function POST(request: Request) {
           jobType: "carrier_sync",
           entityType: "shipment",
           entityId: shipmentRecord.tracking_id,
-          companyId: tenant.companyId,
+          companyId: ownership.companyId,
           payload: {
             trackingId: shipmentRecord.tracking_id,
             provider: requestedCarrier,
@@ -772,7 +786,7 @@ export async function POST(request: Request) {
       action: "shipment.create",
       entityType: "shipment",
       entityId: shipmentRecord.tracking_id,
-      metadata: { status: shipmentRecord.status, driverId: shipmentRecord.driver_id, paymentAmount, pricingEngineAmount: pricingQuote.amount, driverPayoutAmount, carrierCostAmount, lifecycleEmail, adminPaidEmail, adminWalletFeeAdjustment, requestedCarrier, carrierAutomation, removedColumns },
+      metadata: { status: shipmentRecord.status, driverId: shipmentRecord.driver_id, paymentAmount, pricingEngineAmount: pricingQuote.amount, driverPayoutAmount, carrierCostAmount, lifecycleEmail, adminPaidEmail, adminWalletFeeAdjustment, requestedCarrier, carrierAutomation, removedColumns, ownershipSource: ownership.source, explicitlySelectedTenant: ownership.explicitlySelectedTenant },
       request
     }),
     undefined
@@ -819,7 +833,7 @@ export async function POST(request: Request) {
       message: postCreateWarnings.length ? "Shipment created by operations with post-create warnings." : "Shipment created by operations.",
       entityType: "shipment",
       entityId: shipmentRecord.tracking_id,
-      metadata: { status: shipmentRecord.status, driverId: shipmentRecord.driver_id, paymentAmount, pricingEngineAmount: pricingQuote.amount, driverPayoutAmount, carrierCostAmount, lifecycleEmail, adminPaidEmail, adminWalletFeeAdjustment, requestedCarrier, carrierAutomation, customerNotification, removedColumns, postCreateWarnings },
+      metadata: { status: shipmentRecord.status, driverId: shipmentRecord.driver_id, paymentAmount, pricingEngineAmount: pricingQuote.amount, driverPayoutAmount, carrierCostAmount, lifecycleEmail, adminPaidEmail, adminWalletFeeAdjustment, requestedCarrier, carrierAutomation, customerNotification, removedColumns, postCreateWarnings, ownershipSource: ownership.source, explicitlySelectedTenant: ownership.explicitlySelectedTenant },
       request
     }),
     undefined

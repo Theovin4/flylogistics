@@ -41,7 +41,7 @@ function htmlEmail(input: AdminNotificationInput) {
     title: input.title,
     body: input.message,
     reference: input.entityId,
-    cta: { label: "Open admin dashboard", url: `${siteConfig.url}/dashboard/admin` },
+    cta: { label: "Open admin dashboard", url: `${siteConfig.url}/admin/dashboard` },
     details: [
       { label: "Severity", value: input.severity ?? "info" },
       { label: "Entity", value: input.entityType },
@@ -73,7 +73,7 @@ export async function notifyAdmin(supabase: SupabaseAdminClient | null, input: A
   const whatsapp = phone
     ? await sendWhatsAppNotification({
         to: phone,
-        message: `Fly Logistics admin alert\n\n${input.title}\n${input.message}${input.entityId ? `\n\nReference: ${input.entityId}` : ""}\n\nDashboard: ${siteConfig.url}/dashboard/admin`,
+        message: `Fly Logistics admin alert\n\n${input.title}\n${input.message}${input.entityId ? `\n\nReference: ${input.entityId}` : ""}\n\nDashboard: ${siteConfig.url}/admin/dashboard`,
         workflow: "admin_alert",
         entityType: input.entityType ?? "admin_notification",
         entityId: input.entityId,
@@ -121,7 +121,7 @@ export async function notifyAdmin(supabase: SupabaseAdminClient | null, input: A
           title: input.title,
           body: input.message,
           reference: input.entityId,
-          cta: { label: "Open admin dashboard", url: `${siteConfig.url}/dashboard/admin` },
+          cta: { label: "Open admin dashboard", url: `${siteConfig.url}/admin/dashboard` },
           details: [
             { label: "Severity", value: input.severity ?? "info" },
             { label: "Entity", value: input.entityType }

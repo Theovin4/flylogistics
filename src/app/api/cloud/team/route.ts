@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { siteConfig } from "@/lib/site";
-import { getCloudBillingPlan, isCloudPlanLimitReached } from "@/lib/cloud-plans";
+import { isCloudPlanLimitReached } from "@/lib/cloud-plans";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
-import { requireCompanyRole } from "@/server/tenancy";
+import { requireCloudFeature } from "@/server/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ const teamSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "team_management", ["owner", "admin"]);
   if (!access.profile || !access.tenant || access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   const supabase = getSupabaseAdmin();
   if (!supabase || !access.tenant.companyId) return NextResponse.json({ error: "Team management is temporarily unavailable." }, { status: 503 });
@@ -29,14 +29,13 @@ export async function GET(request: Request) {
     : { data: [], error: null };
   const profileMap = new Map((profiles.data ?? []).map((profile) => [String(profile.id), profile]));
   const team = (members.data ?? []).map((member) => ({ ...member, profile: profileMap.get(String(member.user_id)) ?? null }));
-  const plan = getCloudBillingPlan(access.tenant.company?.subscription_plan ?? access.tenant.company?.plan);
-  return NextResponse.json({ team, limit: plan.maxUsers });
+  return NextResponse.json({ team, limit: access.entitlements?.limits.users ?? null });
 }
 
 export async function POST(request: Request) {
   const limited = await enforceRateLimit(request, "cloud-team-invite", { limit: 15, windowSeconds: 300 });
   if (limited) return limited;
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "team_management", ["owner", "admin"]);
   if (!access.profile || !access.tenant || access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = await parseJson(request, teamSchema, "Enter a valid name, email, and company role.");
   if (parsed.response) return parsed.response;
@@ -44,9 +43,9 @@ export async function POST(request: Request) {
   if (!supabase || !access.tenant.companyId) return NextResponse.json({ error: "Team invitations are temporarily unavailable." }, { status: 503 });
 
   const count = await supabase.from("company_members").select("id", { count: "exact", head: true }).eq("company_id", access.tenant.companyId);
-  const plan = getCloudBillingPlan(access.tenant.company?.subscription_plan ?? access.tenant.company?.plan);
-  if (isCloudPlanLimitReached(count.count ?? 0, plan.maxUsers)) {
-    return NextResponse.json({ error: `${plan.name} supports ${plan.maxUsers} team members. Upgrade the company plan before adding another member.` }, { status: 409 });
+  const userLimit = access.entitlements?.limits.users ?? null;
+  if (isCloudPlanLimitReached(count.count ?? 0, userLimit)) {
+    return NextResponse.json({ error: `${access.entitlements?.plan ?? "Current"} plan supports ${userLimit} team members. Upgrade the company plan before adding another member.` }, { status: 409 });
   }
 
   const email = parsed.data.email.toLowerCase();

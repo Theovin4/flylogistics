@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
-import { requireCompanyRole } from "@/server/tenancy";
+import { requireCloudFeature, requireCompanyRole } from "@/server/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const limited = await enforceRateLimit(request, "cloud-customers-create", { limit: 40, windowSeconds: 60 });
   if (limited) return limited;
-  const access = await requireCompanyRole(request, ["owner", "admin", "dispatcher"]);
+  const access = await requireCloudFeature(request, "operations", ["owner", "admin", "dispatcher"]);
   if (!access.profile || !access.tenant || access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = await parseJson(request, customerSchema, "Complete the required customer details.");
   if (parsed.response) return parsed.response;

@@ -11,13 +11,18 @@ import { canAccessRole, normalizeRole, type FlyRole } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-type Profile = {
+export type RoleGateProfile = {
   email: string | null;
   full_name: string | null;
   role: FlyRole;
 };
 
-export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; children: ReactNode }) {
+type RoleGateProps = {
+  allowedRoles: FlyRole[];
+  children: ReactNode | ((profile: RoleGateProfile) => ReactNode);
+};
+
+export function RoleGate({ allowedRoles, children }: RoleGateProps) {
   const pathname = usePathname();
   const router = useRouter();
   const loginPath =
@@ -31,7 +36,7 @@ export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; 
           ? "/dispatcher/login"
           : "/login";
   const loginHref = `${loginPath}?next=${encodeURIComponent(pathname)}` as NextRoute;
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<RoleGateProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -131,5 +136,5 @@ export function RoleGate({ allowedRoles, children }: { allowedRoles: FlyRole[]; 
     );
   }
 
-  return children;
+  return typeof children === "function" ? children(profile) : children;
 }

@@ -19,7 +19,7 @@ import { whatsappMessages } from "@/lib/whatsapp";
 import { buildInternationalOperationsSummary } from "@/lib/international";
 import { deliveryCategoryValues, shipmentTypeFromDeliveryCategory } from "@/lib/pricing";
 import { carrierProviders } from "@/lib/carriers";
-import { requireCompanyRole } from "@/server/tenancy";
+import { requireCloudFeature } from "@/server/tenancy";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
@@ -184,7 +184,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ tr
   const limited = await enforceRateLimit(request, "shipment-update", { limit: 90, windowSeconds: 60 });
   if (limited) return limited;
 
-  const access = await requireCompanyRole(request, ["owner", "admin", "dispatcher", "driver"]);
+  const access = await requireCloudFeature(request, "operations", ["owner", "admin", "dispatcher", "driver"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -557,7 +557,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ t
   if (limited) return limited;
 
   const { trackingId } = await params;
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "shipment_management", ["owner", "admin"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 

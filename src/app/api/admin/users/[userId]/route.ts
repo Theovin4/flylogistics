@@ -166,6 +166,20 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ u
     return apiError("Account not found.", { status: 404 });
   }
 
+  if (role === "admin") {
+    const adminCount = await supabase
+      .from("user_profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "admin");
+    if (adminCount.error) {
+      logApiError(adminCount.error, "Unable to verify administrator count before account deletion.", requestContext(request, { userId }));
+      return apiError("Unable to verify administrator coverage before deleting this account.", { status: 500 });
+    }
+    if ((adminCount.count ?? 0) <= 1) {
+      return apiError("The final administrator account cannot be deleted.", { status: 409 });
+    }
+  }
+
   const linkedDriver = await loadLinkedDriver(supabase, userId, profile?.driver_id);
   if (linkedDriver?.id) {
     const activeShipments = await activeShipmentsForDriver(supabase, linkedDriver.id);

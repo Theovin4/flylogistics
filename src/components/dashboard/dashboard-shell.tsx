@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import type { Route as NextRoute } from "next";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   Activity,
   Bell,
@@ -32,8 +33,10 @@ import { RoleGate } from "@/components/auth/role-gate";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { AdminGlobalSearch } from "@/components/admin/admin-global-search";
 import { DashboardNavGroup, DashboardQuickActions, DashboardSectionHeader } from "@/components/dashboard/dashboard-primitives";
 import { internalAdminRoles, type FlyRole } from "@/lib/roles";
+import { canAccessAdminPath, rolesForAdminPath } from "@/lib/admin-access";
 
 function AdminPanelLoading({ label = "Loading operations panel" }: { label?: string }) {
   return (
@@ -135,6 +138,10 @@ const AdminCryptoPaymentsPanel = dynamic(() => import("@/components/admin/admin-
   loading: () => <AdminPanelLoading label="Loading crypto payments" />,
   ssr: false
 });
+const AdminCloudTenantPanel = dynamic(() => import("@/components/admin/admin-cloud-tenant-panel").then((module) => module.AdminCloudTenantPanel), {
+  loading: () => <AdminPanelLoading label="Loading Cloud tenants" />,
+  ssr: false
+});
 const AdminShipmentManager = dynamic(() => import("@/components/shipments/admin-shipment-manager").then((module) => module.AdminShipmentManager), {
   loading: () => <AdminPanelLoading label="Loading shipments" />,
   ssr: false
@@ -145,7 +152,7 @@ const DriverLocationPanel = dynamic(() => import("@/components/drivers/driver-lo
 });
 
 const primaryNav = [
-  { label: "Admin", href: "/dashboard/admin" },
+  { label: "Admin", href: "/admin/dashboard" },
   { label: "Dispatcher", href: "/dispatcher" },
   { label: "Customer", href: "/customer" },
   { label: "Driver", href: "/driver" }
@@ -157,7 +164,7 @@ const toolNav = [
   { label: "Tracking", href: "/tracking", icon: Radar }
 ] as const;
 
-type AdminSection = "overview" | "shipments" | "quotes" | "drivers" | "map" | "pricing" | "wallets" | "users" | "growth" | "googleBusiness" | "intelligence" | "carriers" | "merchants" | "support" | "notifications" | "whatsapp" | "events" | "settings";
+type AdminSection = "overview" | "analytics" | "shipments" | "quotes" | "drivers" | "map" | "pricing" | "wallets" | "users" | "growth" | "googleBusiness" | "intelligence" | "carriers" | "merchants" | "cloud" | "support" | "notifications" | "whatsapp" | "events" | "settings";
 
 type AdminNavItem = { label: string; href: string; icon: LucideIcon; section: AdminSection };
 
@@ -165,53 +172,84 @@ const adminNavGroups: Array<{ title: string; items: AdminNavItem[] }> = [
   {
     title: "Operations",
     items: [
-      { label: "Dashboard", href: "/dashboard/admin", icon: Gauge, section: "overview" },
-      { label: "Shipments", href: "/dashboard/admin#admin-shipments", icon: Package, section: "shipments" },
-      { label: "Drivers", href: "/dashboard/admin#admin-drivers", icon: Truck, section: "drivers" },
-      { label: "Tracking map", href: "/dashboard/admin#admin-map", icon: MapPinned, section: "map" }
+      { label: "Dashboard", href: "/admin/dashboard", icon: Gauge, section: "overview" },
+      { label: "Shipments", href: "/admin/shipments", icon: Package, section: "shipments" },
+      { label: "Drivers", href: "/admin/drivers", icon: Truck, section: "drivers" },
+      { label: "Tracking map", href: "/admin/tracking", icon: MapPinned, section: "map" }
     ]
   },
   {
     title: "Customers",
     items: [
-      { label: "Customers & roles", href: "/dashboard/admin#admin-users", icon: Users, section: "users" },
-      { label: "Quote requests", href: "/dashboard/admin#admin-quotes", icon: FileText, section: "quotes" },
-      { label: "Merchants", href: "/dashboard/admin#admin-merchants", icon: Building2, section: "merchants" },
-      { label: "Support", href: "/dashboard/admin#admin-support", icon: MessageSquareText, section: "support" },
-      { label: "Growth", href: "/dashboard/admin#admin-growth", icon: TrendingUp, section: "growth" }
+      { label: "Customers & roles", href: "/admin/customers", icon: Users, section: "users" },
+      { label: "Quote requests", href: "/admin/quotes", icon: FileText, section: "quotes" },
+      { label: "Merchants", href: "/admin/merchants", icon: Building2, section: "merchants" },
+      { label: "Cloud tenants", href: "/admin/cloud", icon: Building2, section: "cloud" },
+      { label: "Support", href: "/admin/support", icon: MessageSquareText, section: "support" },
+      { label: "Growth", href: "/admin/growth", icon: TrendingUp, section: "growth" }
     ]
   },
   {
     title: "Finance",
     items: [
-      { label: "Pricing", href: "/dashboard/admin#admin-pricing", icon: CreditCard, section: "pricing" },
-      { label: "Wallets", href: "/dashboard/admin#admin-wallets", icon: Wallet, section: "wallets" }
+      { label: "Pricing", href: "/admin/pricing", icon: CreditCard, section: "pricing" },
+      { label: "Payments & wallets", href: "/admin/payments", icon: Wallet, section: "wallets" }
     ]
   },
   {
     title: "System",
     items: [
-      { label: "Integrations", href: "/dashboard/admin#admin-carriers", icon: Route, section: "carriers" },
-      { label: "Google Business", href: "/dashboard/admin#admin-google-business", icon: Building2, section: "googleBusiness" },
-      { label: "AI intelligence", href: "/dashboard/admin#admin-intelligence", icon: Bot, section: "intelligence" },
-      { label: "Notifications", href: "/dashboard/admin#admin-notifications", icon: Bell, section: "notifications" },
-      { label: "WhatsApp inbox", href: "/dashboard/admin#admin-whatsapp", icon: MessageSquareText, section: "whatsapp" },
-      { label: "Events & audit", href: "/dashboard/admin#admin-events", icon: Activity, section: "events" },
-      { label: "Settings", href: "/dashboard/admin#admin-settings", icon: Settings, section: "settings" }
+      { label: "Integrations", href: "/admin/integrations", icon: Route, section: "carriers" },
+      { label: "Google Business", href: "/admin/integrations/google-business", icon: Building2, section: "googleBusiness" },
+      { label: "AI intelligence", href: "/admin/intelligence", icon: Bot, section: "intelligence" },
+      { label: "Analytics", href: "/admin/analytics", icon: Gauge, section: "analytics" },
+      { label: "Notifications", href: "/admin/notifications", icon: Bell, section: "notifications" },
+      { label: "WhatsApp inbox", href: "/admin/whatsapp", icon: MessageSquareText, section: "whatsapp" },
+      { label: "Events & audit", href: "/admin/audit", icon: Activity, section: "events" },
+      { label: "Settings", href: "/admin/settings", icon: Settings, section: "settings" }
     ]
   }
 ];
 
-const adminNav = adminNavGroups.flatMap((group) => group.items);
-
 const adminQuickActions: Array<{ label: string; href: string; icon: LucideIcon; section: AdminSection }> = [
-  { label: "Create Shipment", href: "/dashboard/admin#admin-shipments", icon: Package, section: "shipments" },
-  { label: "Create Driver", href: "/dashboard/admin#admin-drivers", icon: Truck, section: "drivers" },
-  { label: "View Quotes", href: "/dashboard/admin#admin-quotes", icon: FileText, section: "quotes" },
-  { label: "Assign Driver", href: "/dashboard/admin#admin-shipments", icon: Route, section: "shipments" },
-  { label: "View Tracking", href: "/dashboard/admin#admin-map", icon: Radar, section: "map" },
-  { label: "View Customers", href: "/dashboard/admin#admin-users", icon: Users, section: "users" }
+  { label: "Create Shipment", href: "/admin/shipments", icon: Package, section: "shipments" },
+  { label: "Create Driver", href: "/admin/drivers", icon: Truck, section: "drivers" },
+  { label: "View Quotes", href: "/admin/quotes", icon: FileText, section: "quotes" },
+  { label: "Assign Driver", href: "/admin/shipments", icon: Route, section: "shipments" },
+  { label: "View Tracking", href: "/admin/tracking", icon: Radar, section: "map" },
+  { label: "View Customers", href: "/admin/customers", icon: Users, section: "users" }
 ];
+
+function adminSectionFromPathname(pathname: string): AdminSection | null {
+  if (pathname === "/admin/dashboard") return "overview";
+  const section = pathname.split("/").filter(Boolean)[1];
+  switch (section) {
+    case "shipments": return "shipments";
+    case "quotes": return "quotes";
+    case "drivers":
+    case "dispatchers": return "drivers";
+    case "tracking": return "map";
+    case "pricing": return "pricing";
+    case "payments":
+    case "wallets": return "wallets";
+    case "users":
+    case "customers": return "users";
+    case "merchants": return "merchants";
+    case "cloud": return "cloud";
+    case "growth":
+    case "leads": return "growth";
+    case "intelligence": return "intelligence";
+    case "analytics": return "analytics";
+    case "carriers":
+    case "integrations": return pathname.includes("google-business") ? "googleBusiness" : "carriers";
+    case "support": return "support";
+    case "notifications": return "notifications";
+    case "whatsapp": return "whatsapp";
+    case "audit": return "events";
+    case "settings": return "settings";
+    default: return null;
+  }
+}
 
 function adminSectionFromHash(hash: string): AdminSection {
   switch (hash.replace("#", "")) {
@@ -303,20 +341,28 @@ const dashboards = {
 } as const;
 
 export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
+  const pathname = usePathname();
   const config = dashboards[role];
-  const allowedRoles: FlyRole[] = role === "admin" ? [...internalAdminRoles] : [role];
-  const [adminSection, setAdminSection] = useState<AdminSection>("overview");
+  const allowedRoles: FlyRole[] = role === "admin" ? (rolesForAdminPath(pathname) ?? [...internalAdminRoles]) : [role];
+  const [adminSection, setAdminSection] = useState<AdminSection>(() => adminSectionFromPathname(pathname) ?? "overview");
 
   useEffect(() => {
     if (role !== "admin") return;
-    const syncHash = () => setAdminSection(adminSectionFromHash(window.location.hash));
+    const syncHash = () => setAdminSection(adminSectionFromPathname(pathname) ?? adminSectionFromHash(window.location.hash));
     syncHash();
     window.addEventListener("hashchange", syncHash);
     return () => window.removeEventListener("hashchange", syncHash);
-  }, [role]);
+  }, [pathname, role]);
 
   return (
     <RoleGate allowedRoles={allowedRoles}>
+      {(profile) => {
+        const visibleAdminNavGroups = adminNavGroups
+          .map((group) => ({ ...group, items: group.items.filter((item) => canAccessAdminPath(profile.role, item.href)) }))
+          .filter((group) => group.items.length > 0);
+        const visibleAdminNav = visibleAdminNavGroups.flatMap((group) => group.items);
+        const visibleQuickActions = adminQuickActions.filter((item) => canAccessAdminPath(profile.role, item.href));
+        return (
       <main className="min-h-screen bg-background/70">
       <aside className="fixed inset-y-0 left-0 hidden w-72 overflow-y-auto border-r bg-background/88 p-5 backdrop-blur-xl lg:block">
         <Logo />
@@ -330,7 +376,7 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
         </div>
         {role === "admin" ? (
           <nav className="mt-8 grid gap-6">
-            {adminNavGroups.map((group) => (
+            {visibleAdminNavGroups.map((group) => (
               <DashboardNavGroup
                 key={group.title}
                 title={group.title}
@@ -374,6 +420,7 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
           <div>
             <Badge className="border-primary/40 bg-primary/10 text-primary">{role}</Badge>
           </div>
+          {role === "admin" ? <AdminGlobalSearch /> : null}
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             {role === "driver" && <div className="hidden items-center gap-2 text-sm sm:flex"><span>Available</span><Switch defaultChecked /></div>}
             <AccountControl />
@@ -382,7 +429,7 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
         </header>
         <nav className="flex gap-2 overflow-x-auto overscroll-x-contain border-b px-3 py-3 sm:px-4 lg:hidden">
           {role === "admin"
-            ? adminNav.map((item) => (
+            ? visibleAdminNav.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href as NextRoute}
@@ -400,6 +447,11 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
                 </Link>
               ))}
         </nav>
+        {role === "admin" ? (
+          <div className="border-b px-3 py-3 md:hidden">
+            <AdminGlobalSearch mobile />
+          </div>
+        ) : null}
         <div className="mx-auto max-w-[1440px] px-4 py-5 sm:px-6 sm:py-8">
           <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-start">
             <DashboardSectionHeader
@@ -424,7 +476,7 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
                   <DashboardQuickActions
                     title="Quick actions"
                     description="The fastest path into daily operations."
-                    actions={adminQuickActions.map((action) => ({
+                    actions={visibleQuickActions.map((action) => ({
                       ...action,
                       onClick: () => setAdminSection(action.section)
                     }))}
@@ -440,6 +492,7 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
                 </div>
               )}
               {adminSection === "shipments" && <div id="admin-shipments"><AdminShipmentManager mode="shipments" /></div>}
+              {adminSection === "analytics" && <div id="admin-analytics"><AdminAnalyticsPanel /></div>}
               {adminSection === "quotes" && <div id="admin-quotes"><AdminShipmentManager mode="quotes" /></div>}
               {adminSection === "drivers" && <div id="admin-drivers"><AdminDriverManager /></div>}
               {adminSection === "map" && <div id="admin-map"><AdminOperationsMap /></div>}
@@ -456,6 +509,7 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
               {adminSection === "intelligence" && <div id="admin-intelligence"><AdminIntelligencePanel /></div>}
               {adminSection === "carriers" && <div id="admin-carriers"><AdminCarrierDiagnosticsPanel /></div>}
               {adminSection === "merchants" && <div id="admin-merchants"><AdminEnterpriseOperationsPanel /></div>}
+              {adminSection === "cloud" && <div id="admin-cloud"><AdminCloudTenantPanel /></div>}
               {adminSection === "support" && <div id="admin-support"><AdminSupportPanel /></div>}
               {adminSection === "notifications" && <div id="admin-notifications"><AdminNotificationLogPanel /></div>}
               {adminSection === "whatsapp" && <div id="admin-whatsapp"><AdminWhatsAppInbox /></div>}
@@ -547,6 +601,8 @@ export function DashboardShell({ role }: { role: keyof typeof dashboards }) {
         </div>
       </section>
       </main>
+        );
+      }}
     </RoleGate>
   );
 }

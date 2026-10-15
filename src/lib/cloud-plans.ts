@@ -1,5 +1,46 @@
 export type CloudBillingPlan = "starter" | "growth" | "scale";
 export type CloudBrandCapability = "basic_branding" | "advanced_branding" | "email_branding" | "custom_domain" | "remove_platform_branding";
+export type CloudFeature =
+  | "shipment_management"
+  | "customer_portal"
+  | "tracking"
+  | "basic_analytics"
+  | "advanced_analytics"
+  | "ai_dispatch"
+  | "whatsapp_notifications"
+  | "api_access"
+  | "basic_branding"
+  | "advanced_branding"
+  | "email_branding"
+  | "custom_domain"
+  | "remove_platform_branding"
+  | "custom_integrations"
+  | "priority_support"
+  | "dedicated_account_management"
+  | "rates"
+  | "operations"
+  | "team_management";
+
+export type CloudAccessState = "internal" | "trial_active" | "active" | "restricted";
+
+export type CloudEntitlements = {
+  plan: CloudBillingPlan;
+  billingStatus: string;
+  trialActive: boolean;
+  accessState: CloudAccessState;
+  limits: { users: number | null; drivers: number | null };
+  features: ReadonlySet<CloudFeature>;
+};
+
+export type CloudEntitlementCompany = {
+  id?: string | null;
+  status?: string | null;
+  plan?: string | null;
+  subscription_plan?: string | null;
+  subscription_status?: string | null;
+  trial_ends_at?: string | null;
+  subscription_renews_at?: string | null;
+};
 
 export const CLOUD_TRIAL_DAYS = 14;
 
@@ -92,6 +133,92 @@ const cloudBrandCapabilities: Record<CloudBillingPlan, ReadonlySet<CloudBrandCap
   growth: new Set(["basic_branding", "advanced_branding", "email_branding"]),
   scale: new Set(["basic_branding", "advanced_branding", "email_branding", "custom_domain", "remove_platform_branding"])
 };
+
+const starterFeatures: CloudFeature[] = [
+  "shipment_management", "customer_portal", "tracking", "basic_analytics", "basic_branding", "rates", "operations", "team_management"
+];
+
+export const cloudFeatureMatrix: Record<CloudBillingPlan, ReadonlySet<CloudFeature>> = {
+  starter: new Set(starterFeatures),
+  growth: new Set([
+    ...starterFeatures,
+    "advanced_analytics", "ai_dispatch", "whatsapp_notifications", "api_access", "advanced_branding", "email_branding", "priority_support"
+  ]),
+  scale: new Set([
+    ...starterFeatures,
+    "advanced_analytics", "ai_dispatch", "whatsapp_notifications", "api_access", "advanced_branding", "email_branding", "priority_support",
+    "custom_domain", "remove_platform_branding", "custom_integrations", "dedicated_account_management"
+  ])
+};
+
+const allCloudFeatures = new Set<CloudFeature>(Object.values(cloudFeatureMatrix).flatMap((features) => [...features]));
+
+function validFutureDate(value: string | null | undefined, now: Date) {
+  if (!value) return false;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) && timestamp > now.getTime();
+}
+
+export function resolveCloudEntitlements(
+  company: CloudEntitlementCompany | null | undefined,
+  options: { now?: Date; internalCompanyId?: string | null } = {}
+): CloudEntitlements {
+  const now = options.now ?? new Date();
+  const plan = getCloudBillingPlanKey(company?.subscription_plan ?? company?.plan);
+  const configuredPlan = cloudBillingPlans[plan];
+  const storedStatus = String(company?.subscription_status ?? "pending").trim().toLowerCase();
+  const companyStatus = String(company?.status ?? "active").trim().toLowerCase();
+  const internal = Boolean(options.internalCompanyId && company?.id === options.internalCompanyId);
+  const trialActive = storedStatus === "trialing" && validFutureDate(company?.trial_ends_at, now);
+  const renewalExpired = Boolean(company?.subscription_renews_at) && !validFutureDate(company?.subscription_renews_at, now);
+  const paidActive = storedStatus === "active" && !renewalExpired;
+  const accessState: CloudAccessState = internal
+    ? "internal"
+    : companyStatus === "suspended"
+      ? "restricted"
+      : trialActive
+        ? "trial_active"
+        : paidActive
+          ? "active"
+          : "restricted";
+  const billingStatus = internal
+    ? "internal"
+    : storedStatus === "trialing" && !trialActive
+      ? "expired"
+      : storedStatus === "active" && renewalExpired
+        ? "expired"
+        : storedStatus;
+
+  return {
+    plan,
+    billingStatus,
+    trialActive,
+    accessState,
+    limits: internal ? { users: null, drivers: null } : { users: configuredPlan.maxUsers, drivers: configuredPlan.maxDrivers },
+    features: accessState === "restricted" ? new Set<CloudFeature>() : internal ? allCloudFeatures : cloudFeatureMatrix[plan]
+  };
+}
+
+export function hasCloudFeature(entitlements: CloudEntitlements, feature: CloudFeature) {
+  return entitlements.features.has(feature);
+}
+
+export function validateCloudPaymentFacts(input: {
+  plan: CloudBillingPlan;
+  expectedReference: string;
+  transactionStatus?: string | null;
+  transactionReference?: string | null;
+  amount?: number | string | null;
+  currency?: string | null;
+}) {
+  const expected = cloudBillingPlans[input.plan];
+  const paidAmount = Number(input.amount ?? 0);
+  return String(input.transactionStatus ?? "").toLowerCase() === "successful"
+    && input.transactionReference === input.expectedReference
+    && Number.isFinite(paidAmount)
+    && paidAmount === expected.amount
+    && String(input.currency ?? "").toUpperCase() === expected.currency;
+}
 
 export function cloudPlanCan(plan: string | null | undefined, capability: CloudBrandCapability) {
   return cloudBrandCapabilities[getCloudBillingPlanKey(plan)].has(capability);

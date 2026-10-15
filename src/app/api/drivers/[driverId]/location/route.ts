@@ -6,12 +6,12 @@ import {
   normalizeDriverRecord,
   optionalDriverColumns
 } from "@/lib/driver-data";
-import { requireRole } from "@/lib/request-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
 import { logApiError, requestContext } from "@/server/monitoring";
 import { writeOperationalEvent } from "@/server/operational-events";
+import { requireCloudFeature } from "@/server/tenancy";
 
 const locationSchema = z.object({
   latitude: z.coerce.number().min(-90).max(90),
@@ -21,15 +21,18 @@ const locationSchema = z.object({
 
 type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 
-async function verifyDriverCanUpdateLocation(supabase: SupabaseAdminClient, driverId: number) {
-  let result = await supabase
+async function verifyDriverCanUpdateLocation(supabase: SupabaseAdminClient, driverId: number, companyId?: string | null) {
+  let driverQuery = supabase
     .from("drivers")
-    .select("id,approval_status")
-    .eq("id", driverId)
-    .maybeSingle();
+    .select("id,approval_status,company_id")
+    .eq("id", driverId);
+  if (companyId) driverQuery = driverQuery.eq("company_id", companyId);
+  let result = await driverQuery.maybeSingle();
 
   if (missingDriverColumn(result.error) === "approval_status") {
-    result = await supabase.from("drivers").select("id").eq("id", driverId).maybeSingle();
+    let fallbackQuery = supabase.from("drivers").select("id,company_id").eq("id", driverId);
+    if (companyId) fallbackQuery = fallbackQuery.eq("company_id", companyId);
+    result = await fallbackQuery.maybeSingle();
     return { ...result, approved: Boolean(result.data), schemaFallback: true };
   }
 
@@ -39,18 +42,19 @@ async function verifyDriverCanUpdateLocation(supabase: SupabaseAdminClient, driv
 async function updateDriverLocationWithSchemaFallback(
   supabase: SupabaseAdminClient,
   driverId: number,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  companyId?: string | null
 ) {
   const nextPayload = { ...payload };
   const removedColumns: string[] = [];
 
   for (let attempt = 0; attempt <= optionalDriverColumns.size; attempt += 1) {
-    const result = await supabase
+    let query = supabase
       .from("drivers")
       .update(nextPayload)
-      .eq("id", driverId)
-      .select(driverBaseSelect)
-      .single();
+      .eq("id", driverId);
+    if (companyId) query = query.eq("company_id", companyId);
+    const result = await query.select(driverBaseSelect).single();
 
     if (!result.error) return { ...result, removedColumns };
 
@@ -75,7 +79,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ dr
   if (limited) return limited;
 
   const { driverId } = await params;
-  const access = await requireRole(request, ["admin", "dispatcher", "driver"]);
+  const access = await requireCloudFeature(request, "operations", ["owner", "admin", "dispatcher", "driver"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -94,17 +98,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ dr
   const supabase = getSupabaseAdmin();
   if (!supabase) return NextResponse.json({ error: "Driver location updates are temporarily unavailable." }, { status: 503 });
 
-  if (access.profile.role === "driver") {
-    const currentDriver = await verifyDriverCanUpdateLocation(supabase, numericDriverId);
+  const currentDriver = await verifyDriverCanUpdateLocation(supabase, numericDriverId, access.tenant?.schemaReady ? access.tenant.companyId : null);
 
-    if (currentDriver.error) {
-      logApiError(currentDriver.error, "Unable to verify driver approval before location update.", requestContext(request, { driverId: numericDriverId }));
-      return NextResponse.json({ error: "Unable to verify driver account status." }, { status: 500 });
-    }
+  if (currentDriver.error) {
+    logApiError(currentDriver.error, "Unable to verify driver approval before location update.", requestContext(request, { driverId: numericDriverId }));
+    return NextResponse.json({ error: "Unable to verify driver account status." }, { status: 500 });
+  }
 
-    if (!currentDriver.data || !currentDriver.approved) {
-      return NextResponse.json({ error: "Driver account must be approved before updating live location." }, { status: 403 });
-    }
+  if (!currentDriver.data) {
+    return NextResponse.json({ error: "Driver not found." }, { status: 404 });
+  }
+  if (access.profile.role === "driver" && !currentDriver.approved) {
+    return NextResponse.json({ error: "Driver account must be approved before updating live location." }, { status: 403 });
   }
 
   const now = new Date().toISOString();
@@ -123,7 +128,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ dr
     updated_at: now
   };
 
-  const { data: driverData, error: driverError, removedColumns } = await updateDriverLocationWithSchemaFallback(supabase, numericDriverId, updates);
+  const { data: driverData, error: driverError, removedColumns } = await updateDriverLocationWithSchemaFallback(
+    supabase,
+    numericDriverId,
+    updates,
+    access.tenant?.schemaReady ? access.tenant.companyId : null
+  );
 
   if (driverError) {
     logApiError(driverError, "Unable to update driver location.", requestContext(request, { driverId: numericDriverId }));

@@ -1,0 +1,76 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { resolveShipmentOwnership, shipmentOwnershipSourceForActor } from "../src/server/shipment-ownership";
+
+const flyCompanyId = "ceba317a-ecdd-414c-8668-d5e162e11fa1";
+const tenantCompanyId = "6dc19592-4cf2-4e3e-8d38-c0879cd65a1d";
+
+function companyLookup(existingIds: string[]) {
+  return {
+    from: () => ({
+      select: () => ({
+        eq: (_column: string, value: string) => ({
+          maybeSingle: async () => existingIds.includes(value)
+            ? { data: { id: value }, error: null }
+            : { data: null, error: null }
+        })
+      })
+    })
+  };
+}
+
+test("global Fly admin ownership never follows a stale tenant profile", () => {
+  assert.equal(
+    shipmentOwnershipSourceForActor({ role: "admin", company_id: tenantCompanyId }, flyCompanyId),
+    "fly_operations"
+  );
+});
+
+test("tenant owner remains Cloud-owned", () => {
+  assert.equal(
+    shipmentOwnershipSourceForActor({ role: "customer", company_id: tenantCompanyId }, flyCompanyId),
+    "cloud_tenant"
+  );
+});
+
+test("internal staff are Fly-owned only when bound to the trusted ID", () => {
+  assert.equal(
+    shipmentOwnershipSourceForActor({ role: "dispatcher", company_id: flyCompanyId }, flyCompanyId),
+    "fly_operations"
+  );
+  assert.equal(
+    shipmentOwnershipSourceForActor({ role: "dispatcher", company_id: tenantCompanyId }, flyCompanyId),
+    "cloud_tenant"
+  );
+});
+
+test("only a global admin may explicitly select a verified tenant", async () => {
+  const original = process.env.FLY_INTERNAL_COMPANY_ID;
+  process.env.FLY_INTERNAL_COMPANY_ID = flyCompanyId;
+  try {
+    const selected = await resolveShipmentOwnership({
+      supabase: companyLookup([flyCompanyId, tenantCompanyId]) as never,
+      actor: { role: "admin", company_id: tenantCompanyId },
+      tenant: { companyId: tenantCompanyId, companyRole: "owner", company: null, schemaReady: true },
+      explicitlySelectedTenantId: tenantCompanyId
+    });
+    assert.deepEqual(selected, {
+      companyId: tenantCompanyId,
+      source: "cloud_tenant",
+      explicitlySelectedTenant: true
+    });
+
+    await assert.rejects(
+      resolveShipmentOwnership({
+        supabase: companyLookup([flyCompanyId, tenantCompanyId]) as never,
+        actor: { role: "customer", company_id: tenantCompanyId },
+        tenant: { companyId: tenantCompanyId, companyRole: "owner", company: null, schemaReady: true },
+        explicitlySelectedTenantId: tenantCompanyId
+      }),
+      /Only Fly Logistics administrators/
+    );
+  } finally {
+    if (original === undefined) delete process.env.FLY_INTERNAL_COMPANY_ID;
+    else process.env.FLY_INTERNAL_COMPANY_ID = original;
+  }
+});

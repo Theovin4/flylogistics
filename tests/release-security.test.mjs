@@ -43,10 +43,28 @@ test("middleware protects private role workspaces and clears invalid sessions", 
   assert.doesNotMatch(middleware, /user_metadata\?\.role/);
 });
 
-test("every admin API route performs a server-side role check", () => {
+test("every admin API route performs a server-side role or Cloud entitlement check", () => {
   const routes = routeFiles("src/app/api/admin");
   assert.ok(routes.length > 0, "No admin API routes were found");
-  for (const route of routes) assert.match(read(route), /requireRole\(/, `${route} has no requireRole check`);
+  for (const route of routes) assert.match(read(route), /require(?:Role|CloudFeature)\(/, `${route} has no server-side authorization check`);
+});
+
+test("legacy Cloud operational mutations use central entitlements and company scope", () => {
+  const scopedRoutes = [
+    "src/app/api/shipments/[trackingId]/proof/route.ts",
+    "src/app/api/shipments/[trackingId]/carriers/create/route.ts",
+    "src/app/api/shipments/[trackingId]/carriers/rates/route.ts",
+    "src/app/api/shipments/[trackingId]/carriers/sync/route.ts",
+    "src/app/api/drivers/[driverId]/location/route.ts",
+    "src/app/api/admin/dispatch/suggest/route.ts"
+  ];
+  for (const route of scopedRoutes) {
+    const source = read(route);
+    assert.match(source, /requireCloudFeature\(/, `${route} bypasses central Cloud entitlements`);
+    assert.match(source, /companyId|company_id/, `${route} has no tenant scope`);
+  }
+  assert.match(read("src/app/api/notifications/whatsapp/route.ts"), /requireCloudFeature\(request, "whatsapp_notifications"/);
+  assert.match(read("src/app/api/drivers/[driverId]/route.ts"), /requireCloudFeature\(request, "team_management"/);
 });
 
 test("public mutation APIs retain validation and throttling", () => {
@@ -99,7 +117,7 @@ test("cloud operations enforce company roles and tenant row filters", () => {
   ];
   for (const route of tenantRoutes) {
     const source = read(route);
-    assert.match(source, /requireCompanyRole\(/, `${route} has no company role check`);
+    assert.match(source, /require(?:CompanyRole|CloudFeature)\(/, `${route} has no company role or entitlement check`);
     assert.match(source, /companyId|company_id/, `${route} has no company scope`);
   }
   for (const route of ["src/app/api/shipments/route.ts", "src/app/api/drivers/route.ts"]) {
@@ -158,7 +176,7 @@ test("cloud marketing stays static while authenticated workspaces resolve tenant
 test("cloud brand assets are tenant-authorized and content validated", () => {
   const upload = read("src/app/api/cloud/branding/logo/route.ts");
   const dashboard = read("src/components/cloud/cloud-dashboard.tsx");
-  assert.match(upload, /requireCompanyRole\(request, \["owner", "admin"\]\)/);
+  assert.match(upload, /require(?:CompanyRole|CloudFeature)\(request, (?:"basic_branding", )?\["owner", "admin"\]\)/);
   assert.match(upload, /MAX_LOGO_BYTES = 5_000_000/);
   assert.match(upload, /detectedFormat/);
   assert.match(upload, /company-media\/\$\{companyId\}\/logo/);
