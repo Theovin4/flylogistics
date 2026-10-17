@@ -4,7 +4,7 @@
 
 This is a continuation of the prior authenticated staging certification, not a restart. The three required staging environment variables were present, and `STAGING_SUPABASE_URL` resolved exactly to `https://vgrcfuaqxwidgdgtnved.supabase.co`. Secret values were not printed, persisted, or committed. Production Supabase ref `igloqgojviveysjazhmu` remained read-only; `.env.local` was not used.
 
-The prior READY Preview for commit `adaaa4c` was used for authenticated runtime checks. The fixes in this continuation were committed and pushed only to `pre-deployment-cloud-verification` as `280e75c3ab9ad877fd0d372c2893d0d7ac739afb`. The `Vercel – flylogistics` status for that commit remained **pending** through the final 10-minute wait, and no exact candidate Preview URL became available. Therefore none of the fixes in this commit is treated as runtime-certified. Vercel Preview protection was bypassed only by a local server-side proxy; its secret was not sent to the browser. All browser accounts and tenant names were synthetic.
+The earlier authenticated runtime checks used the READY Preview for `adaaa4c`. Fixes were committed only to `pre-deployment-cloud-verification` as `280e75c3ab9ad877fd0d372c2893d0d7ac739afb`, followed by certification record commit `77b4390`. The Preview for `77b4390` is READY: deployment `7143973420`, `https://flylogistics-fztfea42b-vincent-theos-projects.vercel.app`. The updated shipment/privacy fixes and Scale surfaces have not been fully runtime-certified on this candidate. Preview protection was bypassed only through a local server-side proxy; its secret was not sent to the browser. All accounts and tenant data were synthetic.
 
 No real messages, payments, FEZ or Sendbox bookings, production mutations, production deployment, or merge to `main` occurred. Shipment flow checks used the internal Fly carrier only. A zero-price synthetic tenant rate and cleared contact fields were used to avoid paid-booking and notification paths.
 
@@ -23,7 +23,7 @@ No real messages, payments, FEZ or Sendbox bookings, production mutations, produ
 | Tenant pricing | **PASS** | The authenticated tenant-rate runtime path returned NGN 5,000 at 5 kg and NGN 6,000 at 7 kg for a NGN 5,000 base including 5 kg plus NGN 500/kg. |
 | Customer versus Merchant pricing | **PASS** for Fly quote amounts; **NOT CERTIFIED** for provider and Cloud invariants | Identical synthetic quote input returned a normal Customer price of NGN 9,250 and a Merchant price of NGN 8,787: one rounded NGN 463 discount, exactly 5%. No carrier quote/booking was made; provider-cost invariance and Cloud-tenant pricing independence were not verified. |
 | Cloud external customers | **PASS** for storage location; **NOT CERTIFIED** for isolation | Tenant customers were stored in `cloud_customers`, not `company_members`. The bilateral Tenant A↔B read/update/delete matrix was not completed. |
-| Authenticated Cloud mobile workspace | **NOT CERTIFIED** | Synthetic sign-in now reached the authenticated dashboard. All eight requested pages returned HTTP 200 at 320, 360, 375, 390, 430, and 768 px (48 page/viewport combinations). Navigation exposed all 11 workspace links in a horizontally scrollable, reachable bar; tenant branding/data appeared after hydration; no browser console errors, page errors, or HTTP errors were recorded. The settings page had horizontal document overflow at every width (document widths 328, 368, 383, 398, 438, and 1008 px respectively), caused by the hidden company-logo file input inheriting the shared `w-full` input style. A local fix and regression test now constrain that hidden input; candidate Preview mobile verification has not yet been performed. |
+| Authenticated Cloud mobile workspace | **NOT CERTIFIED** | The prior Preview had returned HTTP 200 for all eight pages at 320, 360, 375, 390, 430, and 768 px, but that sweep is not evidence for the current candidate. On READY deployment `7143973420`, synthetic login/session endpoints and `/api/cloud/overview` returned HTTP 200; `/cloud/dashboard` also returned HTTP 200. The browser nevertheless remained on “Loading secure workspace...” after reload. Dashboard scripts loaded with HTTP 200, but no client API request or browser console/page error was observed. A direct authenticated server request included the workspace markup and synthetic tenant marker, so the client rendering discrepancy's root cause remains undetermined and may involve the local proxy/browser path. Normal browser click/Enter attempts did not complete sign-in; the previously used manually-dispatched submit is not accepted as proof of working login UX. The eight authenticated pages and six widths, including the settings overflow regression, could not be re-certified on this candidate. |
 | Flutterwave | **MANUAL CHECK REQUIRED** | No charge was made. Trusted application plan amounts and code paths were reviewed, but provider-dashboard plan amount/mapping confirmation is unavailable. |
 | FEZ / Sendbox | **MANUAL CHECK REQUIRED** | No safe configured sandbox/mock verification was available. No production carrier booking was attempted. |
 
@@ -36,26 +36,27 @@ No real messages, payments, FEZ or Sendbox bookings, production mutations, produ
 - Public tracking now omits private addresses, names, package/commercial data, driver identity/location, proof, checklist, and arbitrary stored status text.
 - The authenticated settings mobile sweep reproduced horizontal overflow from the visually hidden company-logo file input. It now has constrained one-pixel dimensions, with a regression assertion in `tests/release-security.test.mjs`.
 - The Scale custom-domain, branding-preference, and integration features are implemented in source with validation, tenant scoping, and Scale entitlement checks. They are blocked from runtime certification until the migration is applied through an authorized staging migration process. The staging test-data admin credential was not used to apply schema changes.
+- On candidate Preview `77b4390`, the authenticated dashboard's server-rendered request and Cloud overview API succeeded, but the browser remained on the loading fallback and made no client API requests. This is a reproduced candidate-runtime symptom, not yet a confirmed application defect: the cause could not be separated from local proxy/browser behavior. No speculative code change was made.
 
 ## Validation and synthetic cleanup
 
 - `npm run validate`: TypeScript passed, ESLint passed, secret scan passed, and 51/51 automated tests passed.
 - The isolated production build excluded environment files, passed validation, and generated 159/159 static pages. `.env.local` was not loaded.
-- The synthetic mobile tenant and owner were removed through the dedicated cleanup path. Cleanup returned success with no errors and confirmed the company was absent. No shipments were created for this mobile fixture.
+- Both synthetic mobile tenants and owners were removed through the dedicated cleanup path. The latest cleanup reported zero errors and confirmed the company was absent; the local proxy and cookie-probe ports were no longer listening afterward. No shipments were created for the latest mobile fixture.
 - The pre-existing `scripts/staging-runtime-certification.mjs` reads production-targeted `.env.local` and was not executed.
 
 ## Remaining release blockers
 
-1. The `Vercel – flylogistics` check for pushed commit `280e75c3ab9ad877fd0d372c2893d0d7ac739afb` remained pending after 10 minutes. Obtain the exact READY Preview URL, then rerun POD authorization, public-tracking privacy, foreign driver/rate mutation, nonexistent-tenant ownership, and settings mobile-overflow checks on that Preview.
-2. Complete the bilateral A↔B isolation matrix, including valid `company_members.id` values, foreign shipment/POD/carrier mutations, and Cloud-customer update/delete.
-3. Complete the requested privilege-escalation personas and shipment ownership matrix, including Fly Admin internal-company and explicit verified-tenant creation.
-4. Apply the Scale-feature migration through an authorized staging migration process, then certify domain, branding, integrations, and tenant isolation.
-5. Verify provider-cost invariance without a real carrier booking, or leave it uncertified.
-6. Obtain Flutterwave dashboard confirmation and an approved FEZ/Sendbox sandbox/mock path.
-7. Complete the post-fix authenticated mobile usability and tenant-branding verification.
+1. Resolve the authenticated Cloud browser loading/login discrepancy on the READY candidate and complete the authenticated eight-page, six-viewport mobile sweep. Do not classify it as a code defect until the local proxy/browser cause is ruled out.
+2. Rerun candidate-Preview POD authorization, public-tracking privacy, foreign driver/rate mutation, nonexistent-tenant ownership, and settings mobile-overflow checks.
+3. Complete the bilateral A↔B isolation matrix, including valid `company_members.id` values, foreign shipment/POD/carrier mutations, and Cloud-customer update/delete.
+4. Complete the requested privilege-escalation personas and shipment ownership matrix, including Fly Admin internal-company and explicit verified-tenant creation.
+5. Apply the Scale-feature migration through an authorized staging migration process, then certify domain, branding, integrations, and tenant isolation.
+6. Verify provider-cost invariance without a real carrier booking, or leave it uncertified.
+7. Obtain Flutterwave dashboard confirmation and an approved FEZ/Sendbox sandbox/mock path.
 
 ## Score and decision
 
-**Score: 55/100.** Core plan limits, expiry, downgrade preservation, tenant pricing, Merchant discount, customer storage, and the synthetic happy-path workflow were exercised. A reproduced POD authorization bypass, public tracking privacy leak, and settings overflow are fixed locally but are not yet verified on a candidate Preview; substantial isolation, role, ownership, Scale-migration, and provider checks remain.
+**Score: 55/100.** Core plan limits, expiry, downgrade preservation, tenant pricing, Merchant discount, customer storage, and the earlier synthetic happy-path workflow were exercised. The reproduced POD authorization bypass, public tracking privacy leak, and settings overflow have local fixes and regression coverage but are not all reverified on the READY candidate. The candidate also has an unresolved authenticated-browser loading symptom. Bilateral isolation, privilege, ownership, Scale migration/surfaces, provider-cost invariance, and manual provider checks remain incomplete.
 
 **NOT READY FOR PRODUCTION DEPLOYMENT**
