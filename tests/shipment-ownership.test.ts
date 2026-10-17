@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveShipmentOwnership, shipmentOwnershipSourceForActor } from "../src/server/shipment-ownership";
+import { canActorSelectShipmentTenant, resolveShipmentOwnership, shipmentOwnershipSourceForActor } from "../src/server/shipment-ownership";
 
 const flyCompanyId = "ceba317a-ecdd-414c-8668-d5e162e11fa1";
 const tenantCompanyId = "6dc19592-4cf2-4e3e-8d38-c0879cd65a1d";
@@ -31,6 +31,13 @@ test("tenant owner remains Cloud-owned", () => {
     shipmentOwnershipSourceForActor({ role: "customer", company_id: tenantCompanyId }, flyCompanyId),
     "cloud_tenant"
   );
+});
+
+test("only a Fly admin may select an explicit shipment tenant", () => {
+  assert.equal(canActorSelectShipmentTenant({ role: "admin" }), true);
+  assert.equal(canActorSelectShipmentTenant({ role: "dispatcher" }), false);
+  assert.equal(canActorSelectShipmentTenant({ role: "customer" }), false);
+  assert.equal(canActorSelectShipmentTenant({ role: "driver" }), false);
 });
 
 test("internal staff are Fly-owned only when bound to the trusted ID", () => {

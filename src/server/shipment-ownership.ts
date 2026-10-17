@@ -29,6 +29,10 @@ export function shipmentOwnershipSourceForActor(
   return "cloud_tenant";
 }
 
+export function canActorSelectShipmentTenant(actor: Pick<AuthProfile, "role">) {
+  return actor.role === "admin";
+}
+
 export async function resolveShipmentOwnership(input: {
   supabase: SupabaseAdminClient;
   actor: Pick<AuthProfile, "role" | "company_id">;
@@ -39,7 +43,7 @@ export async function resolveShipmentOwnership(input: {
   const explicitlySelectedTenantId = input.explicitlySelectedTenantId?.trim();
 
   if (explicitlySelectedTenantId) {
-    if (input.actor.role !== "admin") {
+    if (!canActorSelectShipmentTenant(input.actor)) {
       throw new Error("Only Fly Logistics administrators can select a tenant workspace explicitly.");
     }
     if (explicitlySelectedTenantId === internalCompanyId) {

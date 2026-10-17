@@ -38,7 +38,7 @@ import { writeOperationalEvent } from "@/server/operational-events";
 import { calculateLogisticsPrice } from "@/server/pricing";
 import { calculateTenantRate } from "@/server/tenant-pricing";
 import { sendShipmentLifecycleEmail } from "@/server/shipment-emails";
-import { resolveShipmentOwnership, shipmentOwnershipSourceForActor } from "@/server/shipment-ownership";
+import { canActorSelectShipmentTenant, resolveShipmentOwnership, shipmentOwnershipSourceForActor } from "@/server/shipment-ownership";
 import { getTenantContextForProfile, requireCloudFeature, requireCompanyRole, withCompanyId } from "@/server/tenancy";
 
 const shipmentSchema = z.object({
@@ -268,6 +268,12 @@ export async function POST(request: Request) {
 
     const parsed = await parseJson(request, shipmentSchema, "Please complete the shipment form.");
     if (parsed.response) return parsed.response;
+    if (parsed.data.tenantCompanyId && !canActorSelectShipmentTenant(access.profile)) {
+      return NextResponse.json(
+        { error: "Only Fly Logistics administrators can select a tenant workspace explicitly." },
+        { status: 403 }
+      );
+    }
 
     const supabase = getSupabaseAdmin();
     if (!supabase) {
