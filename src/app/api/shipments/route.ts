@@ -38,7 +38,7 @@ import { writeOperationalEvent } from "@/server/operational-events";
 import { calculateLogisticsPrice } from "@/server/pricing";
 import { calculateTenantRate } from "@/server/tenant-pricing";
 import { sendShipmentLifecycleEmail } from "@/server/shipment-emails";
-import { canActorSelectShipmentTenant, resolveShipmentOwnership, shipmentOwnershipSourceForActor } from "@/server/shipment-ownership";
+import { canActorSelectShipmentTenant, resolveShipmentOwnership, shipmentOwnershipErrorStatus, shipmentOwnershipSourceForActor } from "@/server/shipment-ownership";
 import { getTenantContextForProfile, requireCloudFeature, requireCompanyRole, withCompanyId } from "@/server/tenancy";
 
 const shipmentSchema = z.object({
@@ -852,6 +852,10 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
+    const ownershipErrorStatus = shipmentOwnershipErrorStatus(error);
+    if (ownershipErrorStatus && error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: ownershipErrorStatus });
+    }
     return handleApiError(error, request, "Unable to create shipment. Please try again or choose Fly Logistics Internal fulfilment.");
   }
 }

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AccountPasswordPanel } from "@/components/auth/account-password-panel";
 import { AccountSupportCenter } from "@/components/support/account-support-center";
+import { CloudScaleFeaturesPanel } from "@/components/cloud/cloud-scale-features-panel";
 import { CloudAnalyticsWorkspace, CloudCustomersWorkspace, CloudDispatchWorkspace, CloudDriversWorkspace, CloudRatesWorkspace, CloudShipmentsWorkspace, CloudTeamWorkspace } from "@/components/cloud/cloud-operations-workspace";
 import { useCloudTenant } from "@/components/cloud/cloud-tenant-context";
 import { cloudBillingPlans, cloudLimitLabel, cloudTrialDaysRemaining, getCloudBillingPlanKey, type CloudBillingPlan } from "@/lib/cloud-plans";
@@ -639,7 +640,7 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                               {uploadingLogo ? <Loader2 className="size-4 animate-spin" /> : <ImageUp className="size-4" />}
                               Upload logo
                             </Label>
-                            <Input id="companyLogo" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" disabled={uploadingLogo} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadLogo(file); event.currentTarget.value = ""; }} />
+                            <Input id="companyLogo" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only !h-px !w-px" disabled={uploadingLogo} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadLogo(file); event.currentTarget.value = ""; }} />
                             {settings.logoUrl && <Button type="button" variant="outline" disabled={uploadingLogo} onClick={() => void removeLogo()}><Trash2 className="size-4"/>Remove</Button>}
                           </div>
                         </div>
@@ -669,6 +670,7 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                   </form>
                 </CardContent>
               </Card>
+              <CloudScaleFeaturesPanel enabled={planKey === "scale"} />
               <AccountPasswordPanel
                 title="Cloud account security"
                 description="Change the password for your signed-in Fly Logistics Cloud account without changing company settings."

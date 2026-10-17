@@ -27,8 +27,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ r
   const { rateId } = await params;
   const supabase = getSupabaseAdmin();
   if (!supabase || !access.tenant.companyId) return NextResponse.json({ error: "Company rates are temporarily unavailable." }, { status: 503 });
-  const result = await supabase.from("tenant_rate_cards").delete().eq("id", rateId).eq("company_id", access.tenant.companyId);
+  const result = await supabase.from("tenant_rate_cards").delete().eq("id", rateId).eq("company_id", access.tenant.companyId).select("id").maybeSingle();
   if (result.error) return NextResponse.json({ error: "Unable to delete this company rate." }, { status: 500 });
+  if (!result.data) return NextResponse.json({ error: "Company rate not found." }, { status: 404 });
   await writeAuditLog(supabase, { actor: access.profile, action: "cloud.rate.delete", entityType: "tenant_rate_card", entityId: rateId, request });
   return NextResponse.json({ ok: true });
 }

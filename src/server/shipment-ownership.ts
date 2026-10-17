@@ -33,6 +33,25 @@ export function canActorSelectShipmentTenant(actor: Pick<AuthProfile, "role">) {
   return actor.role === "admin";
 }
 
+export function shipmentOwnershipErrorStatus(error: unknown) {
+  if (!(error instanceof Error)) return null;
+
+  switch (error.message) {
+    case "Only Fly Logistics administrators can select a tenant workspace explicitly.":
+    case "A verified Cloud tenant workspace is required to create this shipment.":
+      return 403;
+    case "The selected tenant workspace was not found.":
+      return 404;
+    case "Unable to verify the selected tenant workspace.":
+    case "Unable to verify the configured Fly Logistics company.":
+    case "The configured Fly Logistics company was not found.":
+    case "FLY_INTERNAL_COMPANY_ID must be configured before Fly Logistics can create shipments.":
+      return 503;
+    default:
+      return null;
+  }
+}
+
 export async function resolveShipmentOwnership(input: {
   supabase: SupabaseAdminClient;
   actor: Pick<AuthProfile, "role" | "company_id">;
@@ -54,9 +73,8 @@ export async function resolveShipmentOwnership(input: {
       .select("id")
       .eq("id", explicitlySelectedTenantId)
       .maybeSingle();
-    if (company.error || !company.data?.id) {
-      throw new Error("The selected tenant workspace could not be verified.");
-    }
+    if (company.error) throw new Error("Unable to verify the selected tenant workspace.");
+    if (!company.data?.id) throw new Error("The selected tenant workspace was not found.");
     return { companyId: explicitlySelectedTenantId, source: "cloud_tenant", explicitlySelectedTenant: true };
   }
 
@@ -66,9 +84,8 @@ export async function resolveShipmentOwnership(input: {
       throw new Error("FLY_INTERNAL_COMPANY_ID must be configured before Fly Logistics can create shipments.");
     }
     const company = await input.supabase.from("companies").select("id").eq("id", internalCompanyId).maybeSingle();
-    if (company.error || !company.data?.id) {
-      throw new Error("The configured Fly Logistics company could not be verified.");
-    }
+    if (company.error) throw new Error("Unable to verify the configured Fly Logistics company.");
+    if (!company.data?.id) throw new Error("The configured Fly Logistics company was not found.");
     return { companyId: internalCompanyId, source, explicitlySelectedTenant: false };
   }
 

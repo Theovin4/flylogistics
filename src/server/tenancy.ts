@@ -79,6 +79,10 @@ export function isCompanyAdmin(role: CloudCompanyRole | null | undefined) {
   return role === "owner" || role === "admin";
 }
 
+export function isShipmentDriver(profileRole: string | null | undefined, companyRole: CloudCompanyRole | null | undefined) {
+  return profileRole === "driver" || (profileRole === "customer" && companyRole === "driver");
+}
+
 export async function getDefaultCompany(supabase: SupabaseAdminClient) {
   const result = await supabase
     .from("companies")

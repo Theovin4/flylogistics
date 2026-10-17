@@ -11,7 +11,7 @@ import { sendCustomerNotification } from "@/server/notifications/service";
 import { getCustomerNotificationPreferences } from "@/server/notifications/preferences";
 import { writeOperationalEvent } from "@/server/operational-events";
 import { sendShipmentLifecycleEmail } from "@/server/shipment-emails";
-import { requireCloudFeature } from "@/server/tenancy";
+import { isShipmentDriver, requireCloudFeature } from "@/server/tenancy";
 
 const proofSchema = z.object({
   proofImageUrl: z.string().url(),
@@ -108,16 +108,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ tr
     return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
   }
 
-  if (access.profile.role === "driver" && (!access.profile.driver_id || String(current.data.driver_id ?? "") !== String(access.profile.driver_id))) {
+  const isDriver = isShipmentDriver(access.profile.role, access.tenant?.companyRole);
+  if (isDriver && (!access.profile.driver_id || String(current.data.driver_id ?? "") !== String(access.profile.driver_id))) {
     return NextResponse.json({ error: "This shipment is not assigned to your driver account." }, { status: 403 });
   }
   const assignedDriverApproval = current.data.assigned_driver?.approval_status;
-  if (
-    access.profile.role === "driver" &&
-    assignedDriverApproval !== undefined &&
-    assignedDriverApproval !== null &&
-    assignedDriverApproval !== "approved"
-  ) {
+  if (isDriver && assignedDriverApproval !== "approved") {
     return NextResponse.json({ error: "Driver account must be approved before uploading proof of delivery." }, { status: 403 });
   }
 

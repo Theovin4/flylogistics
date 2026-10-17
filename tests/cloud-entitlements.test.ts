@@ -26,6 +26,8 @@ test("Starter cannot receive Growth or Scale features", () => {
   assert.equal(hasCloudFeature(result, "advanced_analytics"), false);
   assert.equal(hasCloudFeature(result, "api_access"), false);
   assert.equal(hasCloudFeature(result, "remove_platform_branding"), false);
+  assert.equal(hasCloudFeature(result, "custom_domain"), false);
+  assert.equal(hasCloudFeature(result, "custom_integrations"), false);
   assert.deepEqual(result.limits, { users: 5, drivers: 10 });
 });
 
@@ -42,6 +44,8 @@ test("Scale and explicitly identified internal company receive unlimited limits"
   const scale = resolveCloudEntitlements({ subscription_plan: "scale", subscription_status: "active" }, { now });
   assert.deepEqual(scale.limits, { users: null, drivers: null });
   assert.equal(hasCloudFeature(scale, "custom_integrations"), true);
+  assert.equal(hasCloudFeature(scale, "custom_domain"), true);
+  assert.equal(hasCloudFeature(scale, "remove_platform_branding"), true);
 
   const internal = resolveCloudEntitlements({ id: "trusted-internal-id", subscription_plan: "starter", subscription_status: "expired" }, { now, internalCompanyId: "trusted-internal-id" });
   assert.equal(internal.accessState, "internal");

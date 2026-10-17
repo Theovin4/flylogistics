@@ -29,7 +29,7 @@ import { getCustomerNotificationPreferences } from "@/server/notifications/prefe
 import { estimateShipmentEta } from "@/server/operations-intelligence";
 import { writeOperationalEvent } from "@/server/operational-events";
 import { sendShipmentLifecycleEmail } from "@/server/shipment-emails";
-import { getTenantContextForProfile } from "@/server/tenancy";
+import { getTenantContextForProfile, isShipmentDriver } from "@/server/tenancy";
 
 const updateShipmentSchema = z.object({
   status: z.enum(shipmentStatuses).optional(),
@@ -206,7 +206,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ tr
     return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
   }
 
-  if (access.profile.role === "driver" || access.tenant?.companyRole === "driver") {
+  if (isShipmentDriver(access.profile.role, access.tenant?.companyRole)) {
     if (!access.profile.driver_id || String(current.data.driver_id ?? "") !== String(access.profile.driver_id)) {
       return NextResponse.json({ error: "This shipment is not assigned to your driver account." }, { status: 403 });
     }

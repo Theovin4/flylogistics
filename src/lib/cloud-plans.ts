@@ -21,6 +21,8 @@ export type CloudFeature =
   | "operations"
   | "team_management";
 
+export const cloudIntegrationEvents = ["shipment.created", "shipment.status_changed"] as const;
+
 export type CloudAccessState = "internal" | "trial_active" | "active" | "restricted";
 
 export type CloudEntitlements = {

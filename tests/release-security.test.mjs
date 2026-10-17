@@ -153,6 +153,18 @@ test("cloud public tracking is tenant-scoped and customer-safe", () => {
   assert.doesNotMatch(portal, /carrier_order_no/);
 });
 
+test("tenant driver and foreign mutation routes reject missing rows safely", () => {
+  const proof = read("src/app/api/shipments/[trackingId]/proof/route.ts");
+  const driverUpdate = read("src/app/api/drivers/[driverId]/route.ts");
+  const rateDelete = read("src/app/api/cloud/rates/[rateId]/route.ts");
+  assert.match(proof, /isShipmentDriver\(access\.profile\.role,\s*access\.tenant\?\.companyRole\)/);
+  assert.match(proof, /isDriver\s*&&\s*assignedDriverApproval\s*!==\s*"approved"/);
+  assert.match(driverUpdate, /query\.select\(driverBaseSelect\)\.maybeSingle\(\)/);
+  assert.match(driverUpdate, /if\s*\(!data\)\s*return\s+NextResponse\.json\(\{\s*error:\s*"Driver not found\."\s*\},\s*\{\s*status:\s*404\s*\}\)/);
+  assert.match(rateDelete, /\.delete\(\).*\.select\("id"\)\.maybeSingle\(\)/);
+  assert.match(rateDelete, /if\s*\(!result\.data\)\s*return\s+NextResponse\.json\(\{\s*error:\s*"Company rate not found\."\s*\},\s*\{\s*status:\s*404\s*\}\)/);
+});
+
 test("cloud branding is resolved before workspace hydration", () => {
   const layout = read("src/app/cloud/(workspace)/layout.tsx");
   const provider = read("src/components/cloud/cloud-tenant-context.tsx");
@@ -184,12 +196,19 @@ test("cloud brand assets are tenant-authorized and content validated", () => {
   assert.match(dashboard, /credentials:\s*"same-origin"/);
 });
 
+test("cloud logo file picker stays visually hidden without causing horizontal overflow", () => {
+  const dashboard = read("src/components/cloud/cloud-dashboard.tsx");
+  assert.match(dashboard, /id="companyLogo" type="file"[^>]*className="sr-only !h-px !w-px"/);
+});
+
 test("cloud public contacts expose only explicit safe tenant fields", () => {
   const profile = read("src/server/public-tenant-profile.ts");
   const branding = read("src/lib/tenant-branding.ts");
   assert.match(profile, /PUBLIC_TENANT_SELECT/);
   for (const field of ["public_address", "public_phone", "public_whatsapp", "public_support_email", "show_contact_on_tracking"]) assert.match(profile, new RegExp(field));
   for (const forbidden of ["billing_email", "flutterwave", "subscription_plan", "owner", "user_id"]) assert.doesNotMatch(profile, new RegExp(forbidden));
+  assert.match(profile, /Cloud branding preferences are unavailable/);
+  assert.match(profile, /logWarn\(/);
   assert.match(branding, /https:\/\/wa\.me\/\$\{phone\}/);
   assert.match(branding, /encodeURIComponent\(message\)/);
 });

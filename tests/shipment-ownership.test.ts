@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canActorSelectShipmentTenant, resolveShipmentOwnership, shipmentOwnershipSourceForActor } from "../src/server/shipment-ownership";
+import {
+  canActorSelectShipmentTenant,
+  resolveShipmentOwnership,
+  shipmentOwnershipErrorStatus,
+  shipmentOwnershipSourceForActor
+} from "../src/server/shipment-ownership";
 
 const flyCompanyId = "ceba317a-ecdd-414c-8668-d5e162e11fa1";
 const tenantCompanyId = "6dc19592-4cf2-4e3e-8d38-c0879cd65a1d";
@@ -80,4 +85,13 @@ test("only a global admin may explicitly select a verified tenant", async () => 
     if (original === undefined) delete process.env.FLY_INTERNAL_COMPANY_ID;
     else process.env.FLY_INTERNAL_COMPANY_ID = original;
   }
+});
+
+test("shipment ownership errors become safe client or configuration responses", () => {
+  assert.equal(shipmentOwnershipErrorStatus(new Error("Only Fly Logistics administrators can select a tenant workspace explicitly.")), 403);
+  assert.equal(shipmentOwnershipErrorStatus(new Error("A verified Cloud tenant workspace is required to create this shipment.")), 403);
+  assert.equal(shipmentOwnershipErrorStatus(new Error("The selected tenant workspace was not found.")), 404);
+  assert.equal(shipmentOwnershipErrorStatus(new Error("Unable to verify the selected tenant workspace.")), 503);
+  assert.equal(shipmentOwnershipErrorStatus(new Error("Unexpected database failure.")), null);
+  assert.equal(shipmentOwnershipErrorStatus("unexpected failure"), null);
 });

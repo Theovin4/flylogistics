@@ -67,14 +67,14 @@ type TrackingResult = {
     isOnline?: boolean | null;
     lastLocationAt?: string | null;
   } | null;
-  vehicle: { id: string; lat: number; lng: number; speedKph: number; type?: string | null };
+  vehicle: { id: string; lat: number | null; lng: number | null; speedKph: number; type?: string | null };
   events: { label: string; location?: string; completed: boolean; occurred_at?: string }[];
   operationsChecklist?: { key: string; label: string; complete: boolean; detail: string }[];
 };
 
 const trackingHighlights = [
-  { icon: PackageCheck, title: "Shipment details", text: "Package type, pickup, delivery, and urgency." },
-  { icon: Truck, title: "Driver visibility", text: "Assigned driver, vehicle status, and delivery progress." },
+  { icon: PackageCheck, title: "Shipment progress", text: "Pickup, delivery stage, and Fly Logistics updates." },
+  { icon: Truck, title: "Operations monitoring", text: "Delivery progress is monitored by Fly Logistics." },
   { icon: ShieldCheck, title: "Secure completion", text: "Delivery completion is verified privately by operations." }
 ] as const;
 
@@ -209,7 +209,9 @@ export function TrackingLookup({ initialTrackingId = "" }: TrackingLookupProps) 
   }, [lookupShipment, result?.trackingId]);
 
   const truckPosition = useMemo(() => {
-    if (!result) return { left: "58%", top: "43%" };
+    if (!result || typeof result.vehicle.lat !== "number" || typeof result.vehicle.lng !== "number") {
+      return { left: "58%", top: "43%" };
+    }
     const latOffset = Math.abs(result.vehicle.lat * 13) % 46;
     const lngOffset = Math.abs(result.vehicle.lng * 17) % 48;
     return {
@@ -318,7 +320,9 @@ export function TrackingLookup({ initialTrackingId = "" }: TrackingLookupProps) 
           <div className="absolute bottom-4 left-4 right-4 rounded-md border border-white/15 bg-black/70 px-4 py-3 text-xs text-white backdrop-blur">
             {result ? (
               <span className="font-mono">
-                {result.vehicle.lat.toFixed(4)}, {result.vehicle.lng.toFixed(4)} - {isMoving ? `${result.vehicle.speedKph} kph` : "stopped"}
+                {typeof result.vehicle.lat === "number" && typeof result.vehicle.lng === "number"
+                  ? `${result.vehicle.lat.toFixed(4)}, ${result.vehicle.lng.toFixed(4)} - ${isMoving ? `${result.vehicle.speedKph} kph` : "stopped"}`
+                  : "Live location details are private"}
               </span>
             ) : (
               <span>Live position appears after lookup</span>
