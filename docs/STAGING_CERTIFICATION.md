@@ -4,7 +4,7 @@
 
 This is a continuation of the prior authenticated staging certification, not a restart. The three required staging environment variables were present, and `STAGING_SUPABASE_URL` resolved exactly to `https://vgrcfuaqxwidgdgtnved.supabase.co`. Secret values were not printed, persisted, or committed. Production Supabase ref `igloqgojviveysjazhmu` remained read-only; `.env.local` was not used.
 
-The prior READY Preview for commit `adaaa4c` was used for the authenticated runtime checks. New source fixes described below are local until pushed and verified on a new READY Preview. Vercel Preview protection was bypassed only by a local server-side proxy; its secret was not sent to the browser. All browser accounts and tenant names were synthetic.
+The prior READY Preview for commit `adaaa4c` was used for authenticated runtime checks. The fixes in this continuation were committed and pushed only to `pre-deployment-cloud-verification` as `280e75c3ab9ad877fd0d372c2893d0d7ac739afb`. The `Vercel – flylogistics` status for that commit remained **pending** through the final 10-minute wait, and no exact candidate Preview URL became available. Therefore none of the fixes in this commit is treated as runtime-certified. Vercel Preview protection was bypassed only by a local server-side proxy; its secret was not sent to the browser. All browser accounts and tenant names were synthetic.
 
 No real messages, payments, FEZ or Sendbox bookings, production mutations, production deployment, or merge to `main` occurred. Shipment flow checks used the internal Fly carrier only. A zero-price synthetic tenant rate and cleared contact fields were used to avoid paid-booking and notification paths.
 
@@ -41,12 +41,12 @@ No real messages, payments, FEZ or Sendbox bookings, production mutations, produ
 
 - `npm run validate`: TypeScript passed, ESLint passed, secret scan passed, and 51/51 automated tests passed.
 - The isolated production build excluded environment files, passed validation, and generated 159/159 static pages. `.env.local` was not loaded.
-- The authenticated mobile tenant and user are synthetic and must be removed through the dedicated cleanup path; cleanup status is recorded in the final certification report after verification.
+- The synthetic mobile tenant and owner were removed through the dedicated cleanup path. Cleanup returned success with no errors and confirmed the company was absent. No shipments were created for this mobile fixture.
 - The pre-existing `scripts/staging-runtime-certification.mjs` reads production-targeted `.env.local` and was not executed.
 
 ## Remaining release blockers
 
-1. Push fixes to `pre-deployment-cloud-verification`, wait for its Preview to become READY, and rerun the affected POD authorization, public-tracking privacy, foreign driver/rate mutation, nonexistent-tenant ownership, and settings mobile-overflow checks on that exact Preview.
+1. The `Vercel – flylogistics` check for pushed commit `280e75c3ab9ad877fd0d372c2893d0d7ac739afb` remained pending after 10 minutes. Obtain the exact READY Preview URL, then rerun POD authorization, public-tracking privacy, foreign driver/rate mutation, nonexistent-tenant ownership, and settings mobile-overflow checks on that Preview.
 2. Complete the bilateral A↔B isolation matrix, including valid `company_members.id` values, foreign shipment/POD/carrier mutations, and Cloud-customer update/delete.
 3. Complete the requested privilege-escalation personas and shipment ownership matrix, including Fly Admin internal-company and explicit verified-tenant creation.
 4. Apply the Scale-feature migration through an authorized staging migration process, then certify domain, branding, integrations, and tenant isolation.
