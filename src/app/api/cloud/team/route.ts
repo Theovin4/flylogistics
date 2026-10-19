@@ -5,7 +5,8 @@ import { isCloudPlanLimitReached } from "@/lib/cloud-plans";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
-import { requireCloudFeature } from "@/server/tenancy";
+import { logApiError, requestContext } from "@/server/monitoring";
+import { removeDefaultCompanyMembership, requireCloudFeature } from "@/server/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,15 @@ export async function POST(request: Request) {
 
   const memberUserId = profile.data?.id;
   if (!memberUserId) return NextResponse.json({ error: "Unable to resolve the invited team account." }, { status: 502 });
+  const defaultMembershipError = await removeDefaultCompanyMembership(supabase, memberUserId);
+  if (defaultMembershipError) {
+    logApiError(
+      defaultMembershipError,
+      "Unable to remove the default Fly company membership before adding the Cloud team member.",
+      requestContext(request, { userId: memberUserId, companyId: access.tenant.companyId })
+    );
+    return NextResponse.json({ error: "Unable to prepare this account for the company workspace." }, { status: 503 });
+  }
   const membership = await supabase.from("company_members").upsert({
     company_id: access.tenant.companyId,
     user_id: memberUserId,

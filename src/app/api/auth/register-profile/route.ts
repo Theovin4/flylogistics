@@ -8,6 +8,7 @@ import { apiError, enforceRateLimit, parseJson } from "@/server/api";
 import { logAuthError, requestContext } from "@/server/monitoring";
 import { sendCustomerNotification } from "@/server/notifications/service";
 import { canKeepSelfServiceRegistrationRole, matchesAuthenticatedRegistrationAccount } from "@/server/self-service-registration";
+import { removeDefaultCompanyMembership } from "@/server/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -139,6 +140,12 @@ export async function POST(request: Request) {
       !canKeepSelfServiceRegistrationRole(existing.data.role, parsed.data.role))
   ) {
     return apiError("This email is already registered for another Fly Logistics role. Please use the correct login page.", { status: 409 });
+  }
+
+  const defaultMembershipError = await removeDefaultCompanyMembership(supabase, userId);
+  if (defaultMembershipError) {
+    logAuthError(defaultMembershipError, "Unable to remove the default Fly company membership during account setup.", requestContext(request, { userId }));
+    return apiError("Unable to prepare company access for this account.", { status: 503 });
   }
 
   const role = normalizeSelfServiceRole(parsed.data.role);

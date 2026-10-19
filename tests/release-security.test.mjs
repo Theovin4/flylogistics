@@ -131,6 +131,23 @@ test("cloud operations enforce company roles and tenant row filters", () => {
   assert.match(read("src/components/cloud/cloud-operations-workspace.tsx"), /export function CloudDispatchWorkspace/);
 });
 
+test("Cloud and self-service provisioning removes default Fly company memberships", () => {
+  const tenancy = read("src/server/tenancy.ts");
+  assert.match(tenancy, /export async function removeDefaultCompanyMembership/);
+  assert.match(tenancy, /\.from\("companies"\)\s*\.select\("id"\)\s*\.eq\("slug",\s*DEFAULT_COMPANY_SLUG\)/);
+  assert.match(tenancy, /\.from\("company_members"\)\s*\.delete\(\)\s*\.eq\("company_id",\s*company\.data\.id\)\s*\.eq\("user_id",\s*userId\)/);
+
+  for (const route of [
+    "src/app/api/cloud/signup/route.ts",
+    "src/app/api/cloud/team/route.ts",
+    "src/app/api/auth/register-profile/route.ts"
+  ]) {
+    const source = read(route);
+    assert.match(source, /removeDefaultCompanyMembership/);
+    assert.match(source, /defaultMembershipError/);
+  }
+});
+
 test("private Cloud workspaces are noindex and private-cache protected", () => {
   const middleware = read("src/middleware.ts");
   const layout = read("src/app/layout.tsx");

@@ -5,7 +5,7 @@ import { normalizeRole } from "@/lib/roles";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { logApiError, logAuthError, requestContext } from "@/server/monitoring";
-import { isTenantSchemaMissing } from "@/server/tenancy";
+import { isTenantSchemaMissing, removeDefaultCompanyMembership } from "@/server/tenancy";
 import { strongPasswordIssue } from "@/lib/account-security";
 
 const signupSchema = z.object({
@@ -74,6 +74,24 @@ export async function POST(request: Request) {
   }
 
   const user = createdUser.data.user;
+  const defaultMembershipError = await removeDefaultCompanyMembership(supabase, user.id);
+  if (defaultMembershipError) {
+    const rollback = await supabase.auth.admin.deleteUser(user.id);
+    if (rollback.error) {
+      logApiError(
+        rollback.error,
+        "Unable to remove the incomplete Cloud owner account after company access setup failed.",
+        requestContext(request, { userId: user.id, slug })
+      );
+    }
+    logApiError(
+      defaultMembershipError,
+      "Unable to remove the default Fly company membership for the Cloud owner.",
+      requestContext(request, { userId: user.id, slug })
+    );
+    return NextResponse.json({ error: "Unable to prepare the owner account right now." }, { status: 503 });
+  }
+
   const company = await supabase
     .from("companies")
     .insert({

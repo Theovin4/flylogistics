@@ -101,6 +101,31 @@ export async function getDefaultCompany(supabase: SupabaseAdminClient) {
   };
 }
 
+export async function removeDefaultCompanyMembership(
+  supabase: SupabaseAdminClient,
+  userId: string
+) {
+  const company = await supabase
+    .from("companies")
+    .select("id")
+    .eq("slug", DEFAULT_COMPANY_SLUG)
+    .maybeSingle();
+  if (company.error) {
+    if (company.error.code === "42P01") return null;
+    return company.error;
+  }
+  if (!company.data) return null;
+
+  const membership = await supabase
+    .from("company_members")
+    .delete()
+    .eq("company_id", company.data.id)
+    .eq("user_id", userId);
+
+  if (membership.error?.code === "42P01") return null;
+  return membership.error;
+}
+
 export async function getTenantContextForProfile(
   supabase: SupabaseAdminClient,
   profile: Pick<AuthProfile, "id" | "role" | "company_id">
