@@ -137,12 +137,16 @@ test("Cloud and self-service provisioning removes default Fly company membership
   assert.match(tenancy, /\.from\("companies"\)\s*\.select\("id"\)\s*\.eq\("slug",\s*DEFAULT_COMPANY_SLUG\)/);
   assert.match(tenancy, /\.from\("company_members"\)\s*\.delete\(\)\s*\.eq\("company_id",\s*company\.data\.id\)\s*\.eq\("user_id",\s*userId\)/);
 
-  for (const route of [
-    "src/app/api/cloud/signup/route.ts",
-    "src/app/api/cloud/team/route.ts",
-    "src/app/api/auth/register-profile/route.ts"
-  ]) {
-    const source = read(route);
+  const signup = read("src/app/api/cloud/signup/route.ts");
+  assert.ok(signup.lastIndexOf("removeDefaultCompanyMembership") > signup.indexOf('.from("company_members").insert('), "Cloud signup cleanup must follow profile and owner-membership creation");
+
+  const team = read("src/app/api/cloud/team/route.ts");
+  assert.ok(team.lastIndexOf("removeDefaultCompanyMembership") > team.indexOf('.from("user_profiles").update('), "Team cleanup must follow profile updates");
+
+  const selfService = read("src/app/api/auth/register-profile/route.ts");
+  assert.ok(selfService.lastIndexOf("removeDefaultCompanyMembership") > selfService.lastIndexOf('.from("user_profiles").upsert('), "Self-service cleanup must follow profile upserts");
+
+  for (const source of [signup, team, selfService]) {
     assert.match(source, /removeDefaultCompanyMembership/);
     assert.match(source, /defaultMembershipError/);
   }

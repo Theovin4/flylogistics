@@ -142,12 +142,6 @@ export async function POST(request: Request) {
     return apiError("This email is already registered for another Fly Logistics role. Please use the correct login page.", { status: 409 });
   }
 
-  const defaultMembershipError = await removeDefaultCompanyMembership(supabase, userId);
-  if (defaultMembershipError) {
-    logAuthError(defaultMembershipError, "Unable to remove the default Fly company membership during account setup.", requestContext(request, { userId }));
-    return apiError("Unable to prepare company access for this account.", { status: 503 });
-  }
-
   const role = normalizeSelfServiceRole(parsed.data.role);
   let driverId = role === "driver" ? existing.data?.driver_id ?? null : null;
 
@@ -227,6 +221,12 @@ export async function POST(request: Request) {
 
   if (updateError) {
     logAuthError(updateError, "Unable to sync registered user metadata.", requestContext(request, { userId, role }));
+  }
+
+  const defaultMembershipError = await removeDefaultCompanyMembership(supabase, userId);
+  if (defaultMembershipError) {
+    logAuthError(defaultMembershipError, "Unable to remove the default Fly company membership during account setup.", requestContext(request, { userId }));
+    return apiError("Unable to prepare company access for this account.", { status: 503 });
   }
 
   if (role === "customer") {

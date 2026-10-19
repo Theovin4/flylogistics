@@ -64,15 +64,6 @@ export async function POST(request: Request) {
 
   const memberUserId = profile.data?.id;
   if (!memberUserId) return NextResponse.json({ error: "Unable to resolve the invited team account." }, { status: 502 });
-  const defaultMembershipError = await removeDefaultCompanyMembership(supabase, memberUserId);
-  if (defaultMembershipError) {
-    logApiError(
-      defaultMembershipError,
-      "Unable to remove the default Fly company membership before adding the Cloud team member.",
-      requestContext(request, { userId: memberUserId, companyId: access.tenant.companyId })
-    );
-    return NextResponse.json({ error: "Unable to prepare this account for the company workspace." }, { status: 503 });
-  }
   const membership = await supabase.from("company_members").upsert({
     company_id: access.tenant.companyId,
     user_id: memberUserId,
@@ -80,6 +71,15 @@ export async function POST(request: Request) {
   }, { onConflict: "company_id,user_id" }).select("id,user_id,role,created_at").single();
   if (membership.error) return NextResponse.json({ error: "Unable to add this team member." }, { status: 500 });
   await supabase.from("user_profiles").update({ company_id: access.tenant.companyId, full_name: parsed.data.name }).eq("id", memberUserId);
+  const defaultMembershipError = await removeDefaultCompanyMembership(supabase, memberUserId);
+  if (defaultMembershipError) {
+    logApiError(
+      defaultMembershipError,
+      "Unable to remove the default Fly company membership after adding the Cloud team member.",
+      requestContext(request, { userId: memberUserId, companyId: access.tenant.companyId })
+    );
+    return NextResponse.json({ error: "Unable to prepare this account for the company workspace." }, { status: 503 });
+  }
   const invitationRecord = {
     company_id: access.tenant.companyId,
     email,
