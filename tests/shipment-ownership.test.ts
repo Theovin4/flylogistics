@@ -56,7 +56,7 @@ test("internal staff are Fly-owned only when bound to the trusted ID", () => {
   );
 });
 
-test("only a global admin may explicitly select a verified tenant", async () => {
+test("an admin acting in a verified tenant cannot select a different tenant", async () => {
   const original = process.env.FLY_INTERNAL_COMPANY_ID;
   process.env.FLY_INTERNAL_COMPANY_ID = flyCompanyId;
   try {
@@ -71,6 +71,38 @@ test("only a global admin may explicitly select a verified tenant", async () => 
       source: "cloud_tenant",
       explicitlySelectedTenant: true
     });
+
+    const globalSelection = await resolveShipmentOwnership({
+      supabase: companyLookup([flyCompanyId, tenantCompanyId]) as never,
+      actor: { role: "admin", company_id: null },
+      tenant: {
+        companyId: flyCompanyId,
+        companyRole: "owner",
+        company: { id: flyCompanyId, name: "Fly Logistics", slug: "fly-logistics" },
+        schemaReady: true
+      },
+      explicitlySelectedTenantId: tenantCompanyId
+    });
+    assert.deepEqual(globalSelection, {
+      companyId: tenantCompanyId,
+      source: "cloud_tenant",
+      explicitlySelectedTenant: true
+    });
+
+    await assert.rejects(
+      resolveShipmentOwnership({
+        supabase: companyLookup([flyCompanyId, tenantCompanyId, "2d9afc71-d188-42c8-8143-8ae5985169bc"]) as never,
+        actor: { role: "admin", company_id: tenantCompanyId },
+        tenant: {
+          companyId: tenantCompanyId,
+          companyRole: "owner",
+          company: { id: tenantCompanyId, name: "Tenant A", slug: "tenant-a" },
+          schemaReady: true
+        },
+        explicitlySelectedTenantId: "2d9afc71-d188-42c8-8143-8ae5985169bc"
+      }),
+      /does not match the active verified tenant context/
+    );
 
     await assert.rejects(
       resolveShipmentOwnership({
@@ -89,6 +121,7 @@ test("only a global admin may explicitly select a verified tenant", async () => 
 
 test("shipment ownership errors become safe client or configuration responses", () => {
   assert.equal(shipmentOwnershipErrorStatus(new Error("Only Fly Logistics administrators can select a tenant workspace explicitly.")), 403);
+  assert.equal(shipmentOwnershipErrorStatus(new Error("The selected tenant workspace does not match the active verified tenant context.")), 403);
   assert.equal(shipmentOwnershipErrorStatus(new Error("A verified Cloud tenant workspace is required to create this shipment.")), 403);
   assert.equal(shipmentOwnershipErrorStatus(new Error("The selected tenant workspace was not found.")), 404);
   assert.equal(shipmentOwnershipErrorStatus(new Error("Unable to verify the selected tenant workspace.")), 503);

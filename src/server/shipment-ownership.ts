@@ -1,6 +1,6 @@
 import type { AuthProfile } from "@/lib/request-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import type { TenantContext } from "@/server/tenancy";
+import { DEFAULT_COMPANY_SLUG, type TenantContext } from "@/server/tenancy";
 
 type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 
@@ -38,6 +38,7 @@ export function shipmentOwnershipErrorStatus(error: unknown) {
 
   switch (error.message) {
     case "Only Fly Logistics administrators can select a tenant workspace explicitly.":
+    case "The selected tenant workspace does not match the active verified tenant context.":
     case "A verified Cloud tenant workspace is required to create this shipment.":
       return 403;
     case "The selected tenant workspace was not found.":
@@ -64,6 +65,15 @@ export async function resolveShipmentOwnership(input: {
   if (explicitlySelectedTenantId) {
     if (!canActorSelectShipmentTenant(input.actor)) {
       throw new Error("Only Fly Logistics administrators can select a tenant workspace explicitly.");
+    }
+    const activeTenantId = input.tenant.companyId;
+    const activeTenantIsVerifiedCloudTenant =
+      input.tenant.schemaReady &&
+      Boolean(activeTenantId) &&
+      Boolean(input.tenant.company?.id === activeTenantId) &&
+      input.tenant.company?.slug !== DEFAULT_COMPANY_SLUG;
+    if (activeTenantIsVerifiedCloudTenant && activeTenantId !== explicitlySelectedTenantId) {
+      throw new Error("The selected tenant workspace does not match the active verified tenant context.");
     }
     if (explicitlySelectedTenantId === internalCompanyId) {
       throw new Error("Use the Fly Logistics operations workflow for internal shipments.");
