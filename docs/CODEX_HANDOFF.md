@@ -1,5 +1,103 @@
 # Fly Logistics Codex Handoff
 
+## Authoritative current checkpoint — 2026-10-19 (Africa/Lagos)
+
+This section supersedes the historical checkpoints below.
+
+- Repository: `C:\Users\USER\Documents\New project\fly-logistics`
+- Branch: `pre-deployment-cloud-verification`
+- Remote: `https://github.com/Theovin4/flylogistics.git`
+- Verified base commit: `3954b313b8b9f678d9dba3010a552553e89dfa17`
+- Staging Supabase: `vgrcfuaqxwidgdgtnved`; production `igloqgojviveysjazhmu` was not mutated.
+- No push, merge, Preview deployment, production deployment, payment, notification, or carrier booking occurred in this checkpoint.
+
+### Current architecture
+
+- Next.js 15 App Router, React 19, TypeScript, Supabase Auth/Postgres/RLS, Vercel, Flutterwave, FEZ, and Sendbox.
+- Tenant ownership is `company_id`-scoped in server routes and RLS. Plans and entitlements live in `src/lib/cloud-plans.ts` and `src/server/tenancy.ts`.
+- Flutterwave verification/webhooks live in `src/server/cloud-billing.ts`; carriers are abstracted by `src/server/carriers.ts`.
+
+### Completed and verified
+
+- Preserved prior staging passes: Growth limits; Starter downgrade/trial expiry; 54/54 bilateral isolation; 6/6 tracking privacy; internal-membership cleanup; mismatched-driver POD rejection; genuine token expiry; ownership cases; and 48-case authenticated mobile sweep.
+- Applied `20261017_cloud_scale_features.sql` only to staging as `20261019151314 cloud_scale_features`.
+- Verified Scale tables have RLS, no anon/authenticated DML grants, and service-role DML only.
+- Added Preview-only suppression of external admin email/WhatsApp while retaining the operational event. Production/development behavior is unchanged.
+- Added a same-provider carrier-create replay guard when a genuine external reference already exists.
+- Added exact pricing tests: Customer NGN 9,250, Merchant NGN 8,787 after one rounded 5% discount; provider cost and tenant rates remain independent.
+- `npm run validate` passed TypeScript, ESLint, secret scan, and 58/58 tests.
+- Environment-free production build passed and generated 159/159 static pages without loading `.env.local`.
+
+### Database migrations
+
+- `20260920_cloud_operations_remediation.sql`
+- `20260930_merchant_portal_foundation.sql`
+- `20261004_cloud_white_label_contacts.sql`
+- `20261014_service_only_event_tables.sql`
+- `20261017_cloud_scale_features.sql` — applied and verified on staging only.
+
+### Outstanding tasks and known issues
+
+- The three inherited runtime variables were absent, so the new notification, Scale API, and carrier replay controls could not be retested on the protected READY Preview.
+- Manually confirm Flutterwave dashboard mappings: Starter NGN 25,000/month, Growth NGN 75,000/month, Scale NGN 200,000/month. No payment was attempted.
+- Use approved FEZ/Sendbox sandbox credentials for quote/create/status/cancel tests. No booking was attempted.
+- Supabase leaked-password protection remains disabled. Nine caller-scoped `SECURITY DEFINER` helper warnings remain pending controlled redesign.
+- Scale tables' RLS-without-policy findings are intentional: they are service-only and have no anon/authenticated DML grants.
+
+### Important commands and next action
+
+- `npm run validate`
+- Run `npm run build` only in an environment-free copy for staging certification.
+- Next: commit the local candidate, restore authorized staging/Preview variables, deploy only this branch to Preview, and retest notification suppression, Scale APIs/isolation, and carrier replay protection. Do not use `.env.local` or promote to production.
+
+### Current checklist
+
+- [x] Recover and preserve existing work.
+- [x] Apply and verify Scale staging migration.
+- [x] Add notification suppression, pricing, and carrier idempotency coverage.
+- [x] Pass full validation and environment-free build.
+- [ ] Deploy candidate to Preview and retest new controls.
+- [ ] Confirm Flutterwave provider mappings.
+- [ ] Run approved FEZ/Sendbox sandbox lifecycle.
+- [ ] Approve controlled production deployment.
+
+**NOT READY FOR PRODUCTION DEPLOYMENT**
+
+## Authenticated staging checkpoint — 2026-10-16
+
+- Repository: `C:\Users\USER\Documents\New project\fly-logistics`
+- Branch: `pre-deployment-cloud-verification`
+- Verified commit: `4a5c8b7897bc90a21d3ebd9c418ace90bbe713a1`
+- Preview deployment: `dpl_EwgB2TpSe18ZWK6qP6mn8wXCNGyA`, READY and matched to the branch/commit.
+- Staging Supabase: `vgrcfuaqxwidgdgtnved`.
+- Production Supabase: `igloqgojviveysjazhmu`; it remained read-only and received no certification writes.
+- No production deployment, merge, carrier order, notification, or payment was performed.
+
+### Verified in this checkpoint
+
+- `npm run validate`: TypeScript, ESLint, client-secret scan, and 38/38 tests passed.
+- `npm run build`: passed and generated 159 pages.
+- Starter staging runtime: driver #11 returned 403 and count stayed 10; seats 2-5 succeeded, seat #6 returned 409, and count stayed 5; advanced analytics, AI dispatch, and WhatsApp APIs returned 403.
+- `crypto_payment_requests` and `resend_webhook_events`: anon INSERT/UPDATE/DELETE returned 401; normal authenticated operations returned 403; service-role INSERT/UPDATE/DELETE succeeded in a rollback-only transaction.
+- SECURITY DEFINER audit: anon can execute none of the audited functions; authenticated access is limited to the nine caller-scoped RLS helpers; trigger/wallet functions are service-only. Anonymous and authenticated roles cannot create objects in `public`.
+- Public Cloud landing, signup, and login pages had no horizontal overflow at 320, 360, 375, 390, 430, or 768 px. Protected workspace routes correctly redirected unauthenticated requests to `/cloud/login`.
+
+### Current release blockers
+
+1. Authenticated Preview POST automation is incomplete: the local Vercel CLI login expired and deployment protection rejected POSTs made through a short-lived share bypass. Do not weaken protection as a workaround.
+2. Growth and Scale runtime boundaries and success paths remain uncertified through Preview.
+3. Trial-expiry HTTP 402, downgrade preservation, two-tenant direct API/RLS isolation, role-escalation attempts, shipment/POD workflow, runtime tenant pricing, and authenticated workspace responsive layouts remain incomplete.
+4. Flutterwave provider-side plan amounts require dashboard verification; FEZ and Sendbox require approved sandbox verification.
+5. Fly-as-carrier linked tenant/fulfilment shipment architecture is not implemented as a completed runtime feature.
+
+### Safe next action
+
+Refresh authorized Vercel CLI access for `flylogistics`, pull Preview-only variables to a temporary ignored file, re-verify the staging ref, and run the remaining authenticated matrix. Never use the existing `.env.local` for runtime certification: it resolves to production Supabase.
+
+### Current decision
+
+`NOT READY FOR PRODUCTION DEPLOYMENT`
+
 Last updated: 2026-10-14 (Africa/Lagos)
 
 ## Recovery checkpoint

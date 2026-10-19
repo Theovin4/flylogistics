@@ -9,6 +9,7 @@ import { debitAdminWalletForCarrier } from "@/server/admin-wallet";
 import { writeAuditLog } from "@/server/audit";
 import { enqueueBackgroundJob } from "@/server/background-jobs";
 import { updateShipmentCarrierFields } from "@/server/carrier-storage";
+import { existingExternalCarrierReference } from "@/server/carrier-idempotency";
 import { refreshCarrierTrackingForFlyNumber } from "@/server/carrier-tracking";
 import { createCarrierShipment, getCarrierRates } from "@/server/carriers";
 import { logApiError, requestContext } from "@/server/monitoring";
@@ -41,6 +42,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
     if (!current.data) return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
     if (access.tenant?.schemaReady && access.tenant.companyId && (current.data as { company_id?: string | null }).company_id !== access.tenant.companyId) {
       return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
+    }
+
+    const existingCarrierReference = existingExternalCarrierReference(current.data, parsed.data.provider);
+    if (existingCarrierReference) {
+      return NextResponse.json({
+        error: "This shipment has already been created with the selected carrier.",
+        shipment: current.data,
+        provider: parsed.data.provider,
+        carrierReference: existingCarrierReference
+      }, { status: 409 });
     }
 
     let shipmentForCarrier = current.data;
