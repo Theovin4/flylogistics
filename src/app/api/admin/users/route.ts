@@ -107,9 +107,9 @@ export async function POST(request: Request) {
         full_name: parsed.data.fullName,
         company: parsed.data.company || null,
         phone: parsed.data.phone || null,
-        vehicle_type: parsed.data.role === "driver" ? normalizeTransportationType(parsed.data.vehicleType) : null,
-        role: parsed.data.role
-      }
+        vehicle_type: parsed.data.role === "driver" ? normalizeTransportationType(parsed.data.vehicleType) : null
+      },
+      app_metadata: { ...authUser.app_metadata, role: parsed.data.role }
     });
     if (updated.error || !updated.data.user) {
       logApiError(updated.error ?? new Error("No auth user returned."), "Unable to update admin-created auth account.", requestContext(request, { email }));
@@ -125,9 +125,9 @@ export async function POST(request: Request) {
         full_name: parsed.data.fullName,
         company: parsed.data.company || null,
         phone: parsed.data.phone || null,
-        vehicle_type: parsed.data.role === "driver" ? normalizeTransportationType(parsed.data.vehicleType) : null,
-        role: parsed.data.role
-      }
+        vehicle_type: parsed.data.role === "driver" ? normalizeTransportationType(parsed.data.vehicleType) : null
+      },
+      app_metadata: { role: parsed.data.role }
     });
     if (created.error || !created.data.user) {
       logApiError(created.error ?? new Error("No auth user returned."), "Unable to create admin-managed auth account.", requestContext(request, { email, role: parsed.data.role }));
@@ -337,6 +337,20 @@ export async function PATCH(request: Request) {
   const previousRole = existing.data?.role ? safeRole(existing.data.role) : null;
   const email = existing.data?.email ?? authUser.data.user.email ?? null;
 
+  if (previousRole === "admin" && role !== "admin") {
+    const adminCount = await supabase
+      .from("user_profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "admin");
+    if (adminCount.error) {
+      logApiError(adminCount.error, "Unable to verify administrator count before role update.", requestContext(request, { userId }));
+      return apiError("Unable to verify administrator coverage before changing this role.", { status: 500 });
+    }
+    if ((adminCount.count ?? 0) <= 1) {
+      return apiError("The final administrator cannot be demoted. Promote another trusted account first.", { status: 409 });
+    }
+  }
+
   const updated = await supabase
     .from("user_profiles")
     .upsert(
@@ -356,8 +370,8 @@ export async function PATCH(request: Request) {
   }
 
   await supabase.auth.admin.updateUserById(userId, {
-    user_metadata: {
-      ...authUser.data.user.user_metadata,
+    app_metadata: {
+      ...authUser.data.user.app_metadata,
       role
     }
   });

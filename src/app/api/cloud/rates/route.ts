@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
-import { requireCompanyRole } from "@/server/tenancy";
+import { requireCloudFeature } from "@/server/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -19,12 +19,22 @@ const rateSchema = z.object({
   etaMinHours: z.coerce.number().int().positive().max(10000).optional(),
   etaMaxHours: z.coerce.number().int().positive().max(10000).optional(),
   isActive: z.boolean().default(true)
-}).refine((data) => !data.etaMinHours || !data.etaMaxHours || data.etaMaxHours >= data.etaMinHours, {
-  message: "Maximum ETA must be greater than or equal to minimum ETA.", path: ["etaMaxHours"]
+}).superRefine((data, context) => {
+  if (data.etaMinHours && data.etaMaxHours && data.etaMaxHours < data.etaMinHours) {
+    context.addIssue({ code: "custom", message: "Maximum ETA must be greater than or equal to minimum ETA.", path: ["etaMaxHours"] });
+  }
+  if (data.isActive && data.basePrice === 0 && data.extraKgPrice === 0) {
+    context.addIssue({ code: "custom", message: "An active rate cannot charge zero for both the base price and extra weight.", path: ["basePrice"] });
+  }
 });
 
+function normalizedZone(value?: string | null) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "*" || normalized === "all" ? "" : normalized;
+}
+
 export async function GET(request: Request) {
-  const access = await requireCompanyRole(request, ["owner", "admin", "dispatcher"]);
+  const access = await requireCloudFeature(request, "rates", ["owner", "admin", "dispatcher"]);
   if (!access.profile || !access.tenant || access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   const supabase = getSupabaseAdmin();
   if (!supabase || !access.tenant.companyId) return NextResponse.json({ error: "Company rates are temporarily unavailable." }, { status: 503 });
@@ -36,12 +46,24 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const limited = await enforceRateLimit(request, "cloud-rates", { limit: 30, windowSeconds: 60 });
   if (limited) return limited;
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "rates", ["owner", "admin"]);
   if (!access.profile || !access.tenant || access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = await parseJson(request, rateSchema, "Complete the company rate details.");
   if (parsed.response) return parsed.response;
   const supabase = getSupabaseAdmin();
   if (!supabase || !access.tenant.companyId) return NextResponse.json({ error: "Company rates are temporarily unavailable." }, { status: 503 });
+  if (parsed.data.isActive) {
+    const existing = await supabase
+      .from("tenant_rate_cards")
+      .select("id,name,origin_zone,destination_zone")
+      .eq("company_id", access.tenant.companyId)
+      .eq("service_type", parsed.data.serviceType)
+      .eq("is_active", true)
+      .limit(100);
+    if (existing.error) return NextResponse.json({ error: "Unable to validate this rate against active pricing." }, { status: 500 });
+    const conflict = existing.data?.find((rate) => normalizedZone(rate.origin_zone) === normalizedZone(parsed.data.originZone) && normalizedZone(rate.destination_zone) === normalizedZone(parsed.data.destinationZone));
+    if (conflict) return NextResponse.json({ error: `An active rate named “${conflict.name}” already covers the same service and route. Pause it before activating another.` }, { status: 409 });
+  }
   const result = await supabase.from("tenant_rate_cards").insert({
     company_id: access.tenant.companyId,
     name: parsed.data.name,

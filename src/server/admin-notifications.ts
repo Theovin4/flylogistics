@@ -3,6 +3,7 @@ import type { getSupabaseAdmin } from "@/lib/supabase-server";
 import { renderFlyEmail, renderFlyEmailText } from "@/server/email-template";
 import { logWarn } from "@/server/monitoring";
 import { sendWhatsAppNotification } from "@/server/notifications/whatsapp";
+import { externalNotificationDeliveryPolicy } from "@/server/notifications/delivery-policy";
 import { writeOperationalEvent } from "@/server/operational-events";
 import { resendFromEmail, resendReplyToEmail } from "@/server/resend-sender";
 
@@ -41,7 +42,7 @@ function htmlEmail(input: AdminNotificationInput) {
     title: input.title,
     body: input.message,
     reference: input.entityId,
-    cta: { label: "Open admin dashboard", url: `${siteConfig.url}/dashboard/admin` },
+    cta: { label: "Open admin dashboard", url: `${siteConfig.url}/admin/dashboard` },
     details: [
       { label: "Severity", value: input.severity ?? "info" },
       { label: "Entity", value: input.entityType },
@@ -54,6 +55,7 @@ function htmlEmail(input: AdminNotificationInput) {
 export async function notifyAdmin(supabase: SupabaseAdminClient | null, input: AdminNotificationInput) {
   const to = adminEmail();
   const phone = adminPhone();
+  const deliveryPolicy = externalNotificationDeliveryPolicy();
 
   await writeOperationalEvent(supabase, {
     category: "notification",
@@ -65,15 +67,33 @@ export async function notifyAdmin(supabase: SupabaseAdminClient | null, input: A
       ...(input.metadata ?? {}),
       adminEmail: to,
       adminPhoneConfigured: Boolean(phone),
-      emailProvider: process.env.RESEND_API_KEY ? "resend" : "not_configured"
+      emailProvider: process.env.RESEND_API_KEY ? "resend" : "not_configured",
+      deliverySuppressed: deliveryPolicy.suppressed,
+      deliverySuppressionReason: deliveryPolicy.reason
     },
     request: input.request
   });
 
+  if (deliveryPolicy.suppressed) {
+    logWarn("Admin external notification delivery suppressed for Vercel Preview.", {
+      notificationTitle: input.title,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      reason: deliveryPolicy.reason
+    });
+    return {
+      ok: true,
+      mode: "dashboard_only" as const,
+      whatsapp: null,
+      suppressed: true,
+      reason: deliveryPolicy.reason
+    };
+  }
+
   const whatsapp = phone
     ? await sendWhatsAppNotification({
         to: phone,
-        message: `Fly Logistics admin alert\n\n${input.title}\n${input.message}${input.entityId ? `\n\nReference: ${input.entityId}` : ""}\n\nDashboard: ${siteConfig.url}/dashboard/admin`,
+        message: `Fly Logistics admin alert\n\n${input.title}\n${input.message}${input.entityId ? `\n\nReference: ${input.entityId}` : ""}\n\nDashboard: ${siteConfig.url}/admin/dashboard`,
         workflow: "admin_alert",
         entityType: input.entityType ?? "admin_notification",
         entityId: input.entityId,
@@ -121,7 +141,7 @@ export async function notifyAdmin(supabase: SupabaseAdminClient | null, input: A
           title: input.title,
           body: input.message,
           reference: input.entityId,
-          cta: { label: "Open admin dashboard", url: `${siteConfig.url}/dashboard/admin` },
+          cta: { label: "Open admin dashboard", url: `${siteConfig.url}/admin/dashboard` },
           details: [
             { label: "Severity", value: input.severity ?? "info" },
             { label: "Entity", value: input.entityType }

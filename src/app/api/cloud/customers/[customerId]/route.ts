@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
-import { requireCompanyRole } from "@/server/tenancy";
+import { requireCloudFeature } from "@/server/tenancy";
 
 const updateSchema = z.object({
   customerType: z.enum(["individual", "business"]).optional(),
@@ -22,7 +22,7 @@ const updateSchema = z.object({
 export async function PATCH(request: Request, { params }: { params: Promise<{ customerId: string }> }) {
   const limited = await enforceRateLimit(request, "cloud-customer-update", { limit: 60, windowSeconds: 60 });
   if (limited) return limited;
-  const access = await requireCompanyRole(request, ["owner", "admin", "dispatcher"]);
+  const access = await requireCloudFeature(request, "operations", ["owner", "admin", "dispatcher"]);
   if (!access.profile || !access.tenant || access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = await parseJson(request, updateSchema, "Enter valid customer details.");
   if (parsed.response) return parsed.response;
@@ -53,7 +53,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cu
 export async function DELETE(request: Request, { params }: { params: Promise<{ customerId: string }> }) {
   const limited = await enforceRateLimit(request, "cloud-customer-delete", { limit: 20, windowSeconds: 60 });
   if (limited) return limited;
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "operations", ["owner", "admin"]);
   if (!access.profile || !access.tenant || access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   const supabase = getSupabaseAdmin();
   if (!supabase || !access.tenant.companyId) return NextResponse.json({ error: "Customer management is temporarily unavailable." }, { status: 503 });

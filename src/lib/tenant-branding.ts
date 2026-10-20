@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { hasCloudFeature, resolveCloudEntitlements } from "@/lib/cloud-plans";
 
 export const DEFAULT_TENANT_COLOR = "#ff7900";
 
@@ -19,12 +20,16 @@ export type TenantBrandProfile = {
   support_email?: string | null;
   support_phone?: string | null;
   plan?: string | null;
+  subscription_plan?: string | null;
+  subscription_status?: string | null;
+  trial_ends_at?: string | null;
+  subscription_renews_at?: string | null;
 };
 
 export type PublicTenantProfile = Pick<
   TenantBrandProfile,
   "name" | "slug" | "logo_url" | "brand_color" | "public_address" | "public_phone" | "public_whatsapp" | "public_support_email" | "show_contact_on_tracking"
->;
+> & { platform_branding_removed: boolean };
 
 export function normalizeTenantColor(value?: string | null, fallback = DEFAULT_TENANT_COLOR) {
   const color = String(value ?? "").trim().toLowerCase();
@@ -78,7 +83,7 @@ export function buildTenantWhatsAppUrl(input: { phone?: string | null; trackingN
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
-export function publicTenantProfile(company: TenantBrandProfile): PublicTenantProfile {
+export function publicTenantProfile(company: TenantBrandProfile, platformBrandingRemoved = false): PublicTenantProfile {
   return {
     name: company.name,
     slug: company.slug,
@@ -88,6 +93,7 @@ export function publicTenantProfile(company: TenantBrandProfile): PublicTenantPr
     public_phone: normalizePublicPhone(company.public_phone),
     public_whatsapp: normalizePublicPhone(company.public_whatsapp),
     public_support_email: company.public_support_email?.trim().toLowerCase() || null,
-    show_contact_on_tracking: company.show_contact_on_tracking === true
+    show_contact_on_tracking: company.show_contact_on_tracking === true,
+    platform_branding_removed: platformBrandingRemoved && hasCloudFeature(resolveCloudEntitlements(company), "remove_platform_branding")
   };
 }

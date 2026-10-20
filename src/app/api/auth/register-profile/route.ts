@@ -7,6 +7,8 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { apiError, enforceRateLimit, parseJson } from "@/server/api";
 import { logAuthError, requestContext } from "@/server/monitoring";
 import { sendCustomerNotification } from "@/server/notifications/service";
+import { canKeepSelfServiceRegistrationRole, matchesAuthenticatedRegistrationAccount } from "@/server/self-service-registration";
+import { removeDefaultCompanyMembership } from "@/server/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -50,21 +52,6 @@ function bearerToken(request: Request) {
   return header.slice(7).trim();
 }
 
-async function findUserByEmail(supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>, email: string) {
-  const normalizedEmail = email.toLowerCase();
-
-  for (let page = 1; page <= 5; page += 1) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) return { user: null, error };
-
-    const user = data.users.find((item) => item.email?.toLowerCase() === normalizedEmail);
-    if (user) return { user, error: null };
-    if (!data.nextPage) break;
-  }
-
-  return { user: null, error: null };
-}
-
 async function createLinkedDriverWithSchemaFallback(
   supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
   payload: Record<string, unknown>
@@ -99,48 +86,25 @@ async function resolveRegisteredUser(
   request: Request,
   input: z.infer<typeof registerProfileSchema>
 ) {
-  const expectedEmail = input.email.toLowerCase();
   const token = bearerToken(request);
 
-  if (token) {
-    const tokenUser = await supabase.auth.getUser(token);
-    if (tokenUser.data.user) {
-      const tokenEmail = tokenUser.data.user.email?.toLowerCase();
-      if (tokenUser.data.user.id !== input.userId || tokenEmail !== expectedEmail) {
-        return { user: null, error: apiError("The profile details do not match the authenticated account.", { status: 403 }) };
-      }
-      return { user: tokenUser.data.user as User, error: null };
-    }
+  if (!token) {
+    return { user: null, error: apiError("Sign in to complete your account profile.", { status: 401 }) };
+  }
+
+  const tokenUser = await supabase.auth.getUser(token);
+  if (!tokenUser.data.user) {
     if (tokenUser.error) {
-      logAuthError(tokenUser.error, "Unable to verify newly registered user by session token; trying admin lookup.", requestContext(request, { userId: input.userId }));
+      logAuthError(tokenUser.error, "Unable to verify account profile session.", requestContext(request, { userId: input.userId }));
     }
+    return { user: null, error: apiError("Sign in to complete your account profile.", { status: 401 }) };
   }
 
-  const byId = await supabase.auth.admin.getUserById(input.userId);
-
-  if (byId.data.user && byId.data.user.email?.toLowerCase() === expectedEmail) {
-    return { user: byId.data.user as User, error: null };
+  if (!matchesAuthenticatedRegistrationAccount(tokenUser.data.user, input)) {
+    return { user: null, error: apiError("The profile details do not match the authenticated account.", { status: 403 }) };
   }
 
-  if (byId.data.user && byId.data.user.email?.toLowerCase() !== expectedEmail) {
-    return { user: null, error: apiError("The profile email does not match the registered account.", { status: 403 }) };
-  }
-
-  if (byId.error) {
-    logAuthError(byId.error, "Unable to verify newly registered user by ID; trying session/email fallback.", requestContext(request, { userId: input.userId }));
-  }
-
-  const byEmail = await findUserByEmail(supabase, input.email);
-  if (byEmail.error) {
-    logAuthError(byEmail.error, "Unable to verify newly registered user by email.", requestContext(request, { userId: input.userId }));
-    return { user: null, error: apiError("Unable to verify the new account. Please confirm your email, then sign in or contact Fly Logistics support.", { status: 404 }) };
-  }
-
-  if (!byEmail.user) {
-    return { user: null, error: apiError("Unable to verify the new account. If email confirmation is enabled, confirm the email and then sign in.", { status: 404 }) };
-  }
-
-  return { user: byEmail.user as User, error: null };
+  return { user: tokenUser.data.user as User, error: null };
 }
 
 export async function POST(request: Request) {
@@ -170,7 +134,11 @@ export async function POST(request: Request) {
     return apiError("Unable to prepare the new account profile.", { status: 500 });
   }
 
-  if (existing.data?.role && !["customer", "driver"].includes(String(existing.data.role).toLowerCase())) {
+  if (
+    existing.data?.role &&
+    (!["customer", "driver"].includes(String(existing.data.role).toLowerCase()) ||
+      !canKeepSelfServiceRegistrationRole(existing.data.role, parsed.data.role))
+  ) {
     return apiError("This email is already registered for another Fly Logistics role. Please use the correct login page.", { status: 409 });
   }
 
@@ -253,6 +221,12 @@ export async function POST(request: Request) {
 
   if (updateError) {
     logAuthError(updateError, "Unable to sync registered user metadata.", requestContext(request, { userId, role }));
+  }
+
+  const defaultMembershipError = await removeDefaultCompanyMembership(supabase, userId);
+  if (defaultMembershipError) {
+    logAuthError(defaultMembershipError, "Unable to remove the default Fly company membership during account setup.", requestContext(request, { userId }));
+    return apiError("Unable to prepare company access for this account.", { status: 503 });
   }
 
   if (role === "customer") {

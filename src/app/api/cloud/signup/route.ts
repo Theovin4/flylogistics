@@ -5,7 +5,7 @@ import { normalizeRole } from "@/lib/roles";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { logApiError, logAuthError, requestContext } from "@/server/monitoring";
-import { isTenantSchemaMissing } from "@/server/tenancy";
+import { isTenantSchemaMissing, removeDefaultCompanyMembership } from "@/server/tenancy";
 import { strongPasswordIssue } from "@/lib/account-security";
 
 const signupSchema = z.object({
@@ -145,6 +145,38 @@ export async function POST(request: Request) {
       requestContext(request, { userId: user.id, companyId: company.data.id })
     );
     return NextResponse.json({ error: "Unable to complete company access setup right now." }, { status: 500 });
+  }
+
+  const defaultMembershipError = await removeDefaultCompanyMembership(supabase, user.id);
+  if (defaultMembershipError) {
+    const rollbackErrors = await Promise.all([
+      supabase.from("company_members").delete().eq("company_id", company.data.id).eq("user_id", user.id),
+      supabase.from("user_profiles").delete().eq("id", user.id),
+      supabase.from("companies").delete().eq("id", company.data.id)
+    ]);
+    for (const rollback of rollbackErrors) {
+      if (rollback.error) {
+        logApiError(
+          rollback.error,
+          "Unable to roll back the incomplete Cloud owner workspace.",
+          requestContext(request, { userId: user.id, companyId: company.data.id })
+        );
+      }
+    }
+    const userRollback = await supabase.auth.admin.deleteUser(user.id);
+    if (userRollback.error) {
+      logApiError(
+        userRollback.error,
+        "Unable to remove the incomplete Cloud owner account after company access setup failed.",
+        requestContext(request, { userId: user.id, slug })
+      );
+    }
+    logApiError(
+      defaultMembershipError,
+      "Unable to remove the default Fly company membership for the Cloud owner.",
+      requestContext(request, { userId: user.id, slug })
+    );
+    return NextResponse.json({ error: "Unable to prepare the owner account right now." }, { status: 503 });
   }
 
   return NextResponse.json({

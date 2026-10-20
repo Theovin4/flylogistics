@@ -3,12 +3,12 @@ import { z } from "zod";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
-import { requireCompanyRole } from "@/server/tenancy";
+import { requireCloudFeature } from "@/server/tenancy";
 
 const updateSchema = z.object({ role: z.enum(["admin", "dispatcher", "driver"]) });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ memberId: string }> }) {
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "team_management", ["owner", "admin"]);
   if (!access.profile || !access.tenant || access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = await parseJson(request, updateSchema, "Select a valid company role.");
   if (parsed.response) return parsed.response;
@@ -22,7 +22,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ me
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ memberId: string }> }) {
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "team_management", ["owner", "admin"]);
   if (!access.profile || !access.tenant || access.error) return NextResponse.json({ error: access.error }, { status: access.status });
   const { memberId } = await params;
   const supabase = getSupabaseAdmin();

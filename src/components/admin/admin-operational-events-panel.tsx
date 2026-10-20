@@ -85,7 +85,7 @@ export function AdminOperationalEventsPanel() {
             Refresh events
           </Button>
           <Button asChild className="w-full sm:w-auto">
-            <Link href={"/dashboard/admin/operational-events" as NextRoute}>
+            <Link href={"/admin/audit" as NextRoute}>
               Full viewer <ArrowRight />
             </Link>
           </Button>

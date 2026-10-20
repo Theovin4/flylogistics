@@ -43,10 +43,28 @@ test("middleware protects private role workspaces and clears invalid sessions", 
   assert.doesNotMatch(middleware, /user_metadata\?\.role/);
 });
 
-test("every admin API route performs a server-side role check", () => {
+test("every admin API route performs a server-side role or Cloud entitlement check", () => {
   const routes = routeFiles("src/app/api/admin");
   assert.ok(routes.length > 0, "No admin API routes were found");
-  for (const route of routes) assert.match(read(route), /requireRole\(/, `${route} has no requireRole check`);
+  for (const route of routes) assert.match(read(route), /require(?:Role|CloudFeature)\(/, `${route} has no server-side authorization check`);
+});
+
+test("legacy Cloud operational mutations use central entitlements and company scope", () => {
+  const scopedRoutes = [
+    "src/app/api/shipments/[trackingId]/proof/route.ts",
+    "src/app/api/shipments/[trackingId]/carriers/create/route.ts",
+    "src/app/api/shipments/[trackingId]/carriers/rates/route.ts",
+    "src/app/api/shipments/[trackingId]/carriers/sync/route.ts",
+    "src/app/api/drivers/[driverId]/location/route.ts",
+    "src/app/api/admin/dispatch/suggest/route.ts"
+  ];
+  for (const route of scopedRoutes) {
+    const source = read(route);
+    assert.match(source, /requireCloudFeature\(/, `${route} bypasses central Cloud entitlements`);
+    assert.match(source, /companyId|company_id/, `${route} has no tenant scope`);
+  }
+  assert.match(read("src/app/api/notifications/whatsapp/route.ts"), /requireCloudFeature\(request, "whatsapp_notifications"/);
+  assert.match(read("src/app/api/drivers/[driverId]/route.ts"), /requireCloudFeature\(request, "team_management"/);
 });
 
 test("public mutation APIs retain validation and throttling", () => {
@@ -99,7 +117,7 @@ test("cloud operations enforce company roles and tenant row filters", () => {
   ];
   for (const route of tenantRoutes) {
     const source = read(route);
-    assert.match(source, /requireCompanyRole\(/, `${route} has no company role check`);
+    assert.match(source, /require(?:CompanyRole|CloudFeature)\(/, `${route} has no company role or entitlement check`);
     assert.match(source, /companyId|company_id/, `${route} has no company scope`);
   }
   for (const route of ["src/app/api/shipments/route.ts", "src/app/api/drivers/route.ts"]) {
@@ -111,6 +129,27 @@ test("cloud operations enforce company roles and tenant row filters", () => {
   assert.match(shipmentUpdate, /enforceRateLimit\(request,\s*"shipment-update"/, "Shipment updates are not rate limited");
   assert.equal(existsSync(join(root, "src/app/cloud/(workspace)/operations/page.tsx")), true, "Cloud operations page is missing");
   assert.match(read("src/components/cloud/cloud-operations-workspace.tsx"), /export function CloudDispatchWorkspace/);
+});
+
+test("Cloud and self-service provisioning removes default Fly company memberships", () => {
+  const tenancy = read("src/server/tenancy.ts");
+  assert.match(tenancy, /export async function removeDefaultCompanyMembership/);
+  assert.match(tenancy, /\.from\("companies"\)\s*\.select\("id"\)\s*\.eq\("slug",\s*DEFAULT_COMPANY_SLUG\)/);
+  assert.match(tenancy, /\.from\("company_members"\)\s*\.delete\(\)\s*\.eq\("company_id",\s*company\.data\.id\)\s*\.eq\("user_id",\s*userId\)/);
+
+  const signup = read("src/app/api/cloud/signup/route.ts");
+  assert.ok(signup.lastIndexOf("removeDefaultCompanyMembership") > signup.indexOf('.from("company_members").insert('), "Cloud signup cleanup must follow profile and owner-membership creation");
+
+  const team = read("src/app/api/cloud/team/route.ts");
+  assert.ok(team.lastIndexOf("removeDefaultCompanyMembership") > team.indexOf('.from("user_profiles").update('), "Team cleanup must follow profile updates");
+
+  const selfService = read("src/app/api/auth/register-profile/route.ts");
+  assert.ok(selfService.lastIndexOf("removeDefaultCompanyMembership") > selfService.lastIndexOf('.from("user_profiles").upsert('), "Self-service cleanup must follow profile upserts");
+
+  for (const source of [signup, team, selfService]) {
+    assert.match(source, /removeDefaultCompanyMembership/);
+    assert.match(source, /defaultMembershipError/);
+  }
 });
 
 test("private Cloud workspaces are noindex and private-cache protected", () => {
@@ -133,6 +172,18 @@ test("cloud public tracking is tenant-scoped and customer-safe", () => {
   assert.match(portal, /publicTracking:\s*true/);
   assert.doesNotMatch(portal, /proof_of_delivery_url/);
   assert.doesNotMatch(portal, /carrier_order_no/);
+});
+
+test("tenant driver and foreign mutation routes reject missing rows safely", () => {
+  const proof = read("src/app/api/shipments/[trackingId]/proof/route.ts");
+  const driverUpdate = read("src/app/api/drivers/[driverId]/route.ts");
+  const rateDelete = read("src/app/api/cloud/rates/[rateId]/route.ts");
+  assert.match(proof, /isShipmentDriver\(access\.profile\.role,\s*access\.tenant\?\.companyRole\)/);
+  assert.match(proof, /isDriver\s*&&\s*assignedDriverApproval\s*!==\s*"approved"/);
+  assert.match(driverUpdate, /query\.select\(driverBaseSelect\)\.maybeSingle\(\)/);
+  assert.match(driverUpdate, /if\s*\(!data\)\s*return\s+NextResponse\.json\(\{\s*error:\s*"Driver not found\."\s*\},\s*\{\s*status:\s*404\s*\}\)/);
+  assert.match(rateDelete, /\.delete\(\).*\.select\("id"\)\.maybeSingle\(\)/);
+  assert.match(rateDelete, /if\s*\(!result\.data\)\s*return\s+NextResponse\.json\(\{\s*error:\s*"Company rate not found\."\s*\},\s*\{\s*status:\s*404\s*\}\)/);
 });
 
 test("cloud branding is resolved before workspace hydration", () => {
@@ -158,12 +209,17 @@ test("cloud marketing stays static while authenticated workspaces resolve tenant
 test("cloud brand assets are tenant-authorized and content validated", () => {
   const upload = read("src/app/api/cloud/branding/logo/route.ts");
   const dashboard = read("src/components/cloud/cloud-dashboard.tsx");
-  assert.match(upload, /requireCompanyRole\(request, \["owner", "admin"\]\)/);
+  assert.match(upload, /require(?:CompanyRole|CloudFeature)\(request, (?:"basic_branding", )?\["owner", "admin"\]\)/);
   assert.match(upload, /MAX_LOGO_BYTES = 5_000_000/);
   assert.match(upload, /detectedFormat/);
   assert.match(upload, /company-media\/\$\{companyId\}\/logo/);
   assert.doesNotMatch(upload, /paramsToSign/);
   assert.match(dashboard, /credentials:\s*"same-origin"/);
+});
+
+test("cloud logo file picker stays visually hidden without causing horizontal overflow", () => {
+  const dashboard = read("src/components/cloud/cloud-dashboard.tsx");
+  assert.match(dashboard, /id="companyLogo" type="file"[^>]*className="sr-only !h-px !w-px"/);
 });
 
 test("cloud public contacts expose only explicit safe tenant fields", () => {
@@ -172,6 +228,8 @@ test("cloud public contacts expose only explicit safe tenant fields", () => {
   assert.match(profile, /PUBLIC_TENANT_SELECT/);
   for (const field of ["public_address", "public_phone", "public_whatsapp", "public_support_email", "show_contact_on_tracking"]) assert.match(profile, new RegExp(field));
   for (const forbidden of ["billing_email", "flutterwave", "subscription_plan", "owner", "user_id"]) assert.doesNotMatch(profile, new RegExp(forbidden));
+  assert.match(profile, /Cloud branding preferences are unavailable/);
+  assert.match(profile, /logWarn\(/);
   assert.match(branding, /https:\/\/wa\.me\/\$\{phone\}/);
   assert.match(branding, /encodeURIComponent\(message\)/);
 });

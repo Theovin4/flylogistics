@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireRole } from "@/lib/request-auth";
 import { sendWhatsAppNotification } from "@/server/notifications/whatsapp";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { writeOperationalEvent } from "@/server/operational-events";
+import { requireCloudFeature } from "@/server/tenancy";
 
 const whatsappNotificationSchema = z.object({
   to: z.string().trim().optional(),
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   const limited = await enforceRateLimit(request, "admin-whatsapp-notification", { limit: 40, windowSeconds: 60 });
   if (limited) return limited;
 
-  const access = await requireRole(request, ["admin", "dispatcher"]);
+  const access = await requireCloudFeature(request, "whatsapp_notifications", ["owner", "admin", "dispatcher"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 

@@ -13,7 +13,7 @@ import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
 import { logApiError, requestContext } from "@/server/monitoring";
 import { writeOperationalEvent } from "@/server/operational-events";
-import { getTenantContextForProfile, requireCompanyRole } from "@/server/tenancy";
+import { getTenantContextForProfile, requireCloudFeature } from "@/server/tenancy";
 
 type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 
@@ -58,7 +58,7 @@ async function updateDriverWithSchemaFallback(
       .update(nextPayload)
       .eq("id", driverId);
     if (companyId) query = query.eq("company_id", companyId);
-    const result = await query.select(driverBaseSelect).single();
+    const result = await query.select(driverBaseSelect).maybeSingle();
 
     if (!result.error) {
       return {
@@ -93,7 +93,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ dr
   if (limited) return limited;
 
   const { driverId } = await params;
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "team_management", ["owner", "admin"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -143,6 +143,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ dr
     logApiError(error, "Unable to update driver.", requestContext(request, { driverId: numericDriverId }));
     return NextResponse.json({ error: "Unable to update driver." }, { status: 500 });
   }
+  if (!data) return NextResponse.json({ error: "Driver not found." }, { status: 404 });
 
   const updatedDriver = normalizeDriverRecord({
     ...(parsed.data.photoUrl !== undefined ? { photo_url: parsed.data.photoUrl || null } : {}),
@@ -190,7 +191,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ d
   if (limited) return limited;
 
   const { driverId } = await params;
-  const access = await requireCompanyRole(request, ["owner", "admin"]);
+  const access = await requireCloudFeature(request, "team_management", ["owner", "admin"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 

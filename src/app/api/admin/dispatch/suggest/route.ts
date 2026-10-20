@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getGroq } from "@/lib/groq";
 import { isDriverSchemaMismatch } from "@/lib/driver-data";
-import { requireRole } from "@/lib/request-auth";
 import { fetchShipmentByTracking } from "@/lib/shipment-data";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
@@ -10,6 +9,7 @@ import { writeAuditLog } from "@/server/audit";
 import { logShipmentWorkflowError, requestContext } from "@/server/monitoring";
 import { estimateShipmentEta, haversineKm, statePoint } from "@/server/operations-intelligence";
 import { writeOperationalEvent } from "@/server/operational-events";
+import { requireCloudFeature } from "@/server/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -289,7 +289,7 @@ export async function POST(request: Request) {
   const limited = await enforceRateLimit(request, "admin-dispatch-suggest", { limit: 30, windowSeconds: 60 });
   if (limited) return limited;
 
-  const access = await requireRole(request, ["admin", "dispatcher"]);
+  const access = await requireCloudFeature(request, "ai_dispatch", ["owner", "admin", "dispatcher"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -308,10 +308,19 @@ export async function POST(request: Request) {
   if (!shipmentResult.data) {
     return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
   }
+  if (access.tenant?.schemaReady && access.tenant.companyId && (shipmentResult.data as { company_id?: string | null }).company_id !== access.tenant.companyId) {
+    return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
+  }
 
+  let driversQuery = supabase.from("drivers").select("id,name,status,phone,photo_url,latitude,longitude,approval_status,rating,last_seen_at").eq("approval_status", "approved");
+  let activeShipmentsQuery = supabase.from("shipments").select("id,tracking_id,status,urgency,driver_id,current_lat,current_lng").neq("tracking_id", trackingId);
+  if (access.tenant?.schemaReady && access.tenant.companyId) {
+    driversQuery = driversQuery.eq("company_id", access.tenant.companyId);
+    activeShipmentsQuery = activeShipmentsQuery.eq("company_id", access.tenant.companyId);
+  }
   const [driversResultRaw, activeShipmentsResult] = await Promise.all([
-    supabase.from("drivers").select("id,name,status,phone,photo_url,latitude,longitude,approval_status,rating,last_seen_at").eq("approval_status", "approved").order("id", { ascending: true }),
-    supabase.from("shipments").select("id,tracking_id,status,urgency,driver_id,current_lat,current_lng").neq("tracking_id", trackingId)
+    driversQuery.order("id", { ascending: true }),
+    activeShipmentsQuery
   ]);
 
   let driversData = driversResultRaw.data as unknown[] | null;

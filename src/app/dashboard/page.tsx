@@ -9,5 +9,5 @@ export const metadata = createMetadata({
 });
 
 export default function DashboardIndexPage() {
-  redirect("/dashboard/admin");
+  redirect("/admin/dashboard");
 }

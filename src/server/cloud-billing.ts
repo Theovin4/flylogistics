@@ -1,5 +1,5 @@
 import { cleanEnv } from "@/lib/env";
-import { cloudBillingPlans, getCloudBillingPlanKey, type CloudBillingPlan } from "@/lib/cloud-plans";
+import { cloudBillingPlans, getCloudBillingPlanKey, validateCloudPaymentFacts, type CloudBillingPlan } from "@/lib/cloud-plans";
 import { siteConfig } from "@/lib/site";
 import type { getSupabaseAdmin } from "@/lib/supabase-server";
 import { createFlutterwaveCheckout, verifyFlutterwaveTransaction } from "@/server/payments/flutterwave";
@@ -64,7 +64,7 @@ function numberValue(value: number | string | null | undefined) {
 
 function planFromReference(txRef?: string | null) {
   const match = String(txRef ?? "").match(/^FLY-CLOUD-[A-Z0-9-]+-(STARTER|GROWTH|SCALE)-\d+$/i);
-  return getCloudBillingPlanKey(match?.[1]?.toLowerCase());
+  return match ? getCloudBillingPlanKey(match[1].toLowerCase()) : null;
 }
 
 export function isCloudBillingReference(txRef?: string | null) {
@@ -272,8 +272,15 @@ export async function verifyCloudSubscriptionPayment(input: {
   const transaction = await verifyFlutterwaveTransaction(input.transactionId);
   const planKey = getCloudBillingPlanKey(company.subscription_plan);
   const paidAmount = Number(transaction.amount ?? 0);
-  const expectedAmount = Number(company.billing_amount ?? cloudBillingPlans[planKey].amount);
-  const isSuccessful = transaction.status === "successful" && transaction.tx_ref === input.txRef && paidAmount >= expectedAmount;
+  const expectedAmount = cloudBillingPlans[planKey].amount;
+  const isSuccessful = validateCloudPaymentFacts({
+    plan: planKey,
+    expectedReference: input.txRef,
+    transactionStatus: transaction.status,
+    transactionReference: transaction.tx_ref,
+    amount: transaction.amount,
+    currency: transaction.currency
+  });
 
   if (!isSuccessful) {
     const failed = await input.supabase
@@ -393,13 +400,69 @@ export async function processCloudBillingWebhook(supabase: SupabaseAdminClient, 
     return { handled: true, ok: false, message: "Cloud subscription company not found." };
   }
 
-  const planKey = txRef ? planFromReference(txRef) : getCloudBillingPlanKey(company.subscription_plan);
+  const storedPlan = getCloudBillingPlanKey(company.subscription_plan);
+  const referencePlan = txRef ? planFromReference(txRef) : null;
+  if (txRef && (!referencePlan || referencePlan !== storedPlan)) {
+    await writeOperationalEvent(supabase, {
+      category: "payment",
+      severity: "warning",
+      message: "Rejected a Cloud subscription webhook with a mismatched plan reference.",
+      entityType: "cloud_subscription",
+      entityId: txRef,
+      metadata: { eventType: input.eventType, storedPlan }
+    });
+    return { handled: true, ok: false, message: "Cloud subscription plan reference did not match the pending company plan." };
+  }
+  const planKey = referencePlan ?? storedPlan;
+  let verifiedAmount = input.amount;
+  let verifiedCurrency = input.currency;
+  if (status === "active") {
+    if (!input.transactionId || !txRef) {
+      await writeOperationalEvent(supabase, {
+        category: "payment",
+        severity: "warning",
+        message: "Rejected an unverifiable active Cloud subscription webhook.",
+        entityType: "cloud_subscription",
+        entityId: txRef ?? String(input.flutterwaveSubscriptionId ?? company.id),
+        metadata: { eventType: input.eventType, reason: "missing_transaction_or_reference" }
+      });
+      return { handled: true, ok: false, message: "Active subscription event requires transaction verification." };
+    }
+    const transaction = await verifyFlutterwaveTransaction(input.transactionId);
+    if (!validateCloudPaymentFacts({
+      plan: planKey,
+      expectedReference: txRef,
+      transactionStatus: transaction.status,
+      transactionReference: transaction.tx_ref,
+      amount: transaction.amount,
+      currency: transaction.currency
+    })) {
+      await writeOperationalEvent(supabase, {
+        category: "payment",
+        severity: "warning",
+        message: "Rejected a Cloud subscription webhook with mismatched verified payment facts.",
+        entityType: "cloud_subscription",
+        entityId: txRef,
+        metadata: { eventType: input.eventType, plan: planKey }
+      });
+      return { handled: true, ok: false, message: "Cloud subscription payment verification failed." };
+    }
+    verifiedAmount = transaction.amount;
+    verifiedCurrency = transaction.currency;
+  }
+
+  const existing = txRef
+    ? await supabase.from("subscriptions").select("id,status,payment_reference").eq("payment_reference", txRef).maybeSingle()
+    : { data: null, error: null };
+  if (!existing.error && existing.data?.status === status) {
+    return { handled: true, ok: true, duplicate: true, status };
+  }
   const subscription = await upsertCloudSubscription(supabase, {
     companyId: company.id,
     plan: planKey,
     status,
-    amount: input.amount ?? company.billing_amount ?? cloudBillingPlans[planKey].amount,
-    currency: input.currency ?? company.billing_currency ?? "NGN",
+    amount: verifiedAmount ?? company.billing_amount ?? cloudBillingPlans[planKey].amount,
+    currency: verifiedCurrency ?? company.billing_currency ?? "NGN",
     paymentReference: txRef,
     flutterwaveCustomerId: input.flutterwaveCustomerId,
     flutterwaveSubscriptionId: input.flutterwaveSubscriptionId ?? txRef,
@@ -415,8 +478,8 @@ export async function processCloudBillingWebhook(supabase: SupabaseAdminClient, 
     .update({
       subscription_status: statusForCompany(status),
       subscription_plan: planKey,
-      billing_amount: input.amount ?? company.billing_amount ?? cloudBillingPlans[planKey].amount,
-      billing_currency: input.currency ?? company.billing_currency ?? "NGN",
+      billing_amount: verifiedAmount ?? company.billing_amount ?? cloudBillingPlans[planKey].amount,
+      billing_currency: verifiedCurrency ?? company.billing_currency ?? "NGN",
       flutterwave_subscription_id: input.flutterwaveSubscriptionId === undefined || input.flutterwaveSubscriptionId === null ? undefined : String(input.flutterwaveSubscriptionId),
       subscription_renews_at: renewalDate,
       last_billing_status: status === "active" ? "PAID" : status.toUpperCase(),

@@ -112,7 +112,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
   function redirectTargetForRole(role: FlyRole) {
     const next = requestedRedirectTarget();
 
-    if (role === "admin") return "/dashboard/admin";
+    if (role === "admin") return "/admin/dashboard";
     if (role === "customer") return "/customer";
 
     if (next?.startsWith(dashboardForRole(role))) return next;

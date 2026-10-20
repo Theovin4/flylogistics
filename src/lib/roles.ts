@@ -48,8 +48,10 @@ export function normalizeSelfServiceRole(role: unknown): SelfServiceRole {
 }
 
 export function portalForRole(role: FlyRole) {
-  if (role === "admin") return "/dashboard/admin";
-  if (role === "customer_care" || role === "moderator" || role === "finance" || role === "warehouse") return "/dashboard/admin";
+  if (role === "admin") return "/admin/dashboard";
+  if (role === "customer_care" || role === "moderator") return "/admin/support";
+  if (role === "finance") return "/admin/payments";
+  if (role === "warehouse") return "/admin/shipments";
   if (role === "dispatcher") return "/dispatcher";
   if (role === "driver") return "/driver";
   return "/customer";

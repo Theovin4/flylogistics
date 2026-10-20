@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireRole } from "@/lib/request-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
 import { sendEmail, sendInApp, sendSms, sendWhatsApp } from "@/server/notifications/service";
 import { writeOperationalEvent } from "@/server/operational-events";
+import { requireCloudFeature } from "@/server/tenancy";
 
 const resendSchema = z.object({
   messageId: z.union([z.string().trim().min(1), z.number()])
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   const limited = await enforceRateLimit(request, "admin-notification-resend", { limit: 30, windowSeconds: 60 });
   if (limited) return limited;
 
-  const access = await requireRole(request, ["admin", "dispatcher"]);
+  const access = await requireCloudFeature(request, "operations", ["owner", "admin", "dispatcher"]);
   if (!access.profile) return NextResponse.json({ error: access.error }, { status: access.status });
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
@@ -33,6 +33,9 @@ export async function POST(request: Request) {
 
   if (error) return NextResponse.json({ error: "Unable to load notification message." }, { status: 500 });
   if (!message) return NextResponse.json({ error: "Notification message not found." }, { status: 404 });
+  if (access.tenant?.schemaReady && access.tenant.companyId && message.company_id !== access.tenant.companyId) {
+    return NextResponse.json({ error: "Notification message not found." }, { status: 404 });
+  }
 
   const metadata = (message.metadata && typeof message.metadata === "object" ? message.metadata : {}) as Record<string, unknown>;
   const input = {

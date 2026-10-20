@@ -490,8 +490,7 @@ export function normalizeShipment(record: ShipmentRecord, options: { includeProo
   const publicTracking = options.publicTracking ?? false;
   const driverLatitude = driver?.current_latitude ?? driver?.latitude;
   const driverLongitude = driver?.current_longitude ?? driver?.longitude;
-  const senderName = record.customer_name ?? "Sender";
-  const publicPickupLabel = senderName ? `Sender: ${senderName}` : "Sender details protected";
+  const publicPickupLabel = "Pickup details protected";
   const sanitizePublicLabel = (text?: string) => {
     if (!publicTracking) return text;
     if (!text) return text;
@@ -527,55 +526,57 @@ export function normalizeShipment(record: ShipmentRecord, options: { includeProo
     trafficAssumption: record.traffic_assumption,
     vehicleType: normalizeTransportationType(record.vehicle_type),
     pickupAddress: publicTracking ? publicPickupLabel : record.pickup_address,
-    deliveryAddress: record.delivery_address,
+    deliveryAddress: publicTracking ? "Delivery details protected" : record.delivery_address,
     pickupState: record.pickup_state,
     destinationState: record.destination_state,
     deliveryCategory: record.delivery_category,
     shipmentType: record.shipment_type ?? shipmentTypeFromDeliveryCategory(record.delivery_category),
-    freightMode: record.freight_mode,
-    quoteCurrency: record.quote_currency,
-    freightClassification: record.freight_classification,
-    internationalTrackingMode: record.international_tracking_mode,
-    commercialInvoice: record.commercial_invoice,
+    freightMode: publicTracking ? null : record.freight_mode,
+    quoteCurrency: publicTracking ? null : record.quote_currency,
+    freightClassification: publicTracking ? null : record.freight_classification,
+    internationalTrackingMode: publicTracking ? null : record.international_tracking_mode,
+    commercialInvoice: publicTracking ? null : record.commercial_invoice,
     pickupCountry: record.pickup_country,
     destinationCountry: record.destination_country,
-    customsInformation: record.customs_information,
-    packageValue: record.package_value,
-    dutiesTaxesAmount: record.duties_taxes_amount,
-    exportImportDocuments: record.export_import_documents,
-    packageType: record.package_type,
+    customsInformation: publicTracking ? null : record.customs_information,
+    packageValue: publicTracking ? null : record.package_value,
+    dutiesTaxesAmount: publicTracking ? null : record.duties_taxes_amount,
+    exportImportDocuments: publicTracking ? null : record.export_import_documents,
+    packageType: publicTracking ? "Package" : record.package_type,
     urgency: record.urgency ?? "standard",
-    customerName: record.customer_name,
-    recipientName: record.recipient_name,
+    customerName: publicTracking ? "Customer" : record.customer_name,
+    recipientName: publicTracking ? null : record.recipient_name,
     ...(publicTracking ? {} : {
       pickupPhone: record.pickup_phone,
       deliveryPhone: record.delivery_phone
     }),
-    customerStatusMessage: record.customer_status_message ?? shipmentCustomerMessage(record.status),
+    customerStatusMessage: publicTracking
+      ? shipmentCustomerMessage(record.status)
+      : record.customer_status_message ?? shipmentCustomerMessage(record.status),
     ...(includeProof ? { proofImageUrl: record.proof_image_url } : {}),
-    packageImageUrl: record.package_image_url,
-    operationsChecklist: publicTracking
-      ? shipmentOperationsChecklist(record).filter((item) => item.key !== "proof")
-      : shipmentOperationsChecklist(record),
-    assignedDriver: driver
+    packageImageUrl: publicTracking ? null : record.package_image_url,
+    operationsChecklist: publicTracking ? [] : shipmentOperationsChecklist(record),
+    assignedDriver: !publicTracking && driver
       ? {
           id: driver.id,
           name: driver.name,
           status: driver.status ?? "Assigned",
-          ...(publicTracking ? {} : { phone: driver.phone }),
+          phone: driver.phone,
           photoUrl: driver.photo_url,
           vehicleType: normalizeTransportationType(driver.vehicle_type),
           isOnline: !String(driver.status ?? "offline").toLowerCase().includes("offline") || driver.is_online === true,
           lastLocationAt: driver.last_location_at
         }
       : null,
-    vehicle: {
-      id: driver?.id ? String(driver.id) : "Unassigned",
-      lat: Number(record.current_lat ?? driverLatitude ?? 6.5244),
-      lng: Number(record.current_lng ?? driverLongitude ?? 3.3792),
-      speedKph: record.status === "IN_TRANSIT" ? 68 : 0,
-      type: normalizeTransportationType(driver?.vehicle_type ?? record.vehicle_type)
-    },
+    vehicle: publicTracking
+      ? { id: "Fly Logistics", lat: null, lng: null, speedKph: 0, type: normalizeTransportationType(record.vehicle_type) }
+      : {
+          id: driver?.id ? String(driver.id) : "Unassigned",
+          lat: Number(record.current_lat ?? driverLatitude ?? 6.5244),
+          lng: Number(record.current_lng ?? driverLongitude ?? 3.3792),
+          speedKph: record.status === "IN_TRANSIT" ? 68 : 0,
+          type: normalizeTransportationType(driver?.vehicle_type ?? record.vehicle_type)
+        },
     events: sortedEvents.map((event) => {
       const safeEvent = {
         label: sanitizePublicLabel(event.label) ?? event.label,

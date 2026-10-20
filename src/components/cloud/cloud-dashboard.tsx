@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AccountPasswordPanel } from "@/components/auth/account-password-panel";
 import { AccountSupportCenter } from "@/components/support/account-support-center";
+import { CloudScaleFeaturesPanel } from "@/components/cloud/cloud-scale-features-panel";
 import { CloudAnalyticsWorkspace, CloudCustomersWorkspace, CloudDispatchWorkspace, CloudDriversWorkspace, CloudRatesWorkspace, CloudShipmentsWorkspace, CloudTeamWorkspace } from "@/components/cloud/cloud-operations-workspace";
 import { useCloudTenant } from "@/components/cloud/cloud-tenant-context";
 import { cloudBillingPlans, cloudLimitLabel, cloudTrialDaysRemaining, getCloudBillingPlanKey, type CloudBillingPlan } from "@/lib/cloud-plans";
@@ -60,6 +61,14 @@ type CloudOverview = {
   members?: Array<Record<string, unknown>>;
   billingHistory?: Array<Record<string, unknown>>;
   usage?: Record<string, number>;
+  entitlements?: {
+    plan: CloudBillingPlan;
+    billingStatus: string;
+    trialActive: boolean;
+    accessState: "internal" | "trial_active" | "active" | "restricted";
+    limits: { users: number | null; drivers: number | null };
+    features: string[];
+  };
   warnings?: string[];
   error?: string;
 };
@@ -176,9 +185,10 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
   const company = overview?.company ?? initialCompany;
   const activeNav = navItems.find((item) => item.section === section) ?? navItems[0];
   const trialDays = cloudTrialDaysRemaining(company?.trial_ends_at);
-  const planKey = getCloudBillingPlanKey(company?.subscription_plan ?? company?.plan);
+  const planKey = overview?.entitlements?.plan ?? getCloudBillingPlanKey(company?.subscription_plan ?? company?.plan);
   const currentPlan = cloudBillingPlans[planKey];
-  const subscriptionStatus = company?.subscription_status ?? (trialDays > 0 ? "trialing" : "active");
+  const subscriptionStatus = overview?.entitlements?.billingStatus ?? (company?.subscription_status === "trialing" && trialDays === 0 ? "expired" : company?.subscription_status ?? "pending");
+  const workspaceRestricted = overview?.entitlements?.accessState === "restricted";
   const onboardingItems = useMemo(
     () => [
       { label: "Brand your workspace", href: "/cloud/settings" as Route, done: Boolean(company?.name && company?.support_email && company?.support_phone) },
@@ -322,7 +332,21 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
   return (
     <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[260px_1fr]">
-        <aside className="glass rounded-md border p-4 lg:sticky lg:top-24 lg:self-start">
+        <div className="min-w-0 lg:hidden">
+          <div className="glass flex items-center gap-3 rounded-t-md border border-b-0 p-3">
+            {company?.logo_url ? <div className="relative h-9 w-16 shrink-0"><Image src={company.logo_url} alt={`${company.name} logo`} fill sizes="64px" className="object-contain object-left" unoptimized /></div> : <div className="grid size-9 shrink-0 place-items-center rounded-md bg-primary text-xs font-black text-primary-foreground">{company?.name?.slice(0, 2).toUpperCase() ?? "FL"}</div>}
+            <div className="min-w-0"><p className="truncate font-black">{company?.name ?? "Fly Logistics Cloud"}</p><p className="text-xs text-muted-foreground">Cloud workspace</p></div>
+          </div>
+          <nav aria-label="Cloud workspace" className="glass flex snap-x snap-mandatory gap-1 overflow-x-auto overscroll-x-contain rounded-b-md border px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const active = item.section === activeNav.section;
+              return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`flex min-h-11 shrink-0 snap-start items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}><Icon className="size-4" />{item.label}</Link>;
+            })}
+          </nav>
+        </div>
+
+        <aside className="glass hidden rounded-md border p-4 lg:sticky lg:top-24 lg:block lg:self-start">
           <div className="flex items-center gap-3">{company?.logo_url ? <div className="relative h-10 w-20"><Image src={company.logo_url} alt={`${company.name} logo`} fill sizes="80px" className="object-contain object-left" unoptimized /></div> : <div className="grid size-10 place-items-center rounded-md bg-primary font-black text-primary-foreground">{company?.name?.slice(0, 2).toUpperCase() ?? "FL"}</div>}<div><Link href={"/cloud/dashboard" as Route} className="font-black">{company?.name ?? "Fly Logistics Cloud"}</Link><p className="text-xs text-muted-foreground">Cloud workspace</p></div></div>
           <nav className="mt-5 grid max-h-[60vh] gap-2 overflow-y-auto pr-1">
             {navItems.map((item) => {
@@ -387,6 +411,16 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
             </div>
           )}
 
+          {!loading && workspaceRestricted && !["overview", "billing", "support", "settings"].includes(section) && (
+            <Card className="glass border-amber-500/40">
+              <CardHeader><CardTitle>Your Cloud access needs attention</CardTitle></CardHeader>
+              <CardContent className="grid gap-4">
+                <p className="text-sm text-muted-foreground">Your trial or subscription is no longer active. Your company data is preserved, but new operational actions are paused until billing is restored.</p>
+                <Button asChild className="w-fit"><Link href={"/cloud/billing" as Route}>Choose a plan</Link></Button>
+              </CardContent>
+            </Card>
+          )}
+
           {!loading && section === "overview" && (
             <div className="grid gap-4">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -422,31 +456,39 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
             </div>
           )}
 
-          {!loading && section === "shipments" && (
+          {!loading && !workspaceRestricted && section === "shipments" && (
             <CloudShipmentsWorkspace />
           )}
 
-          {!loading && section === "operations" && (
+          {!loading && !workspaceRestricted && section === "operations" && (
             <CloudDispatchWorkspace />
           )}
 
-          {!loading && section === "drivers" && (
+          {!loading && !workspaceRestricted && section === "drivers" && (
             <CloudDriversWorkspace />
           )}
 
-          {!loading && section === "customers" && (
+          {!loading && !workspaceRestricted && section === "customers" && (
             <CloudCustomersWorkspace />
           )}
 
-          {!loading && section === "analytics" && (
-            <CloudAnalyticsWorkspace />
+          {!loading && !workspaceRestricted && section === "analytics" && (
+            planKey === "starter" ? (
+              <Card className="glass border-primary/30">
+                <CardHeader><CardTitle>Advanced analytics</CardTitle></CardHeader>
+                <CardContent className="grid gap-4">
+                  <p className="text-sm text-muted-foreground">Advanced route, revenue, conversion, and driver analytics are available on Growth and Scale. Your Starter dashboard still includes the basic shipment totals shown on Overview.</p>
+                  <Button asChild className="w-fit"><Link href={"/cloud/billing" as Route}>Upgrade to Growth</Link></Button>
+                </CardContent>
+              </Card>
+            ) : <CloudAnalyticsWorkspace />
           )}
 
-          {!loading && section === "team" && (
+          {!loading && !workspaceRestricted && section === "team" && (
             <CloudTeamWorkspace />
           )}
 
-          {!loading && section === "rates" && (
+          {!loading && !workspaceRestricted && section === "rates" && (
             <CloudRatesWorkspace />
           )}
 
@@ -598,7 +640,7 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                               {uploadingLogo ? <Loader2 className="size-4 animate-spin" /> : <ImageUp className="size-4" />}
                               Upload logo
                             </Label>
-                            <Input id="companyLogo" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" disabled={uploadingLogo} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadLogo(file); event.currentTarget.value = ""; }} />
+                            <Input id="companyLogo" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only !h-px !w-px" disabled={uploadingLogo} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadLogo(file); event.currentTarget.value = ""; }} />
                             {settings.logoUrl && <Button type="button" variant="outline" disabled={uploadingLogo} onClick={() => void removeLogo()}><Trash2 className="size-4"/>Remove</Button>}
                           </div>
                         </div>
@@ -628,6 +670,7 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                   </form>
                 </CardContent>
               </Card>
+              <CloudScaleFeaturesPanel enabled={planKey === "scale"} />
               <AccountPasswordPanel
                 title="Cloud account security"
                 description="Change the password for your signed-in Fly Logistics Cloud account without changing company settings."
