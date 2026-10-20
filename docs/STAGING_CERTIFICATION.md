@@ -1,5 +1,40 @@
 # FLY LOGISTICS FINAL RELEASE-CANDIDATE STAGING CERTIFICATION
 
+## Authoritative final staging gate — 2026-10-20 (Africa/Lagos)
+
+This section supersedes the earlier Preview-retest blockers and final-gate decisions later in this historical document. It covers only the three previously outstanding runtime checks; previously passed certification matrices were not rerun.
+
+### Locked target and safety preflight
+
+- Branch: `pre-deployment-cloud-verification`
+- Commit: `37a508b7a20ecd18fd032dd0173dc93b01c65bec`
+- Deployment: `dpl_Bb9S7H5fz8qW7ugzcLgRJJjb6o5f`
+- Preview URL: `https://flylogistics-5poxwx4sb-vincent-theos-projects.vercel.app`
+- Vercel reported `READY`, Next.js, Preview target, the exact branch, and the exact commit. The deployment health endpoint returned HTTP 200 with `ok=true` and classification `healthy`.
+- `VERCEL_AUTOMATION_BYPASS_SECRET`, `STAGING_SUPABASE_URL`, and `STAGING_SUPABASE_SECRET_KEY` were present. No secret value was printed or persisted. `STAGING_SUPABASE_URL` exactly matched `https://vgrcfuaqxwidgdgtnved.supabase.co`.
+- Only staging project `vgrcfuaqxwidgdgtnved` and the exact Preview deployment above were exercised. Production project `igloqgojviveysjazhmu`, production deployments, production data, payments, and real recipients/providers were untouched.
+
+### Remaining runtime checks
+
+| Area | Result | Actual runtime evidence |
+|---|---|---|
+| Preview/staging external notification suppression | **PASS** | A synthetic staging-only `POST /api/growth/leads` returned HTTP 201. Two operational events were written; the notification event recorded `deliverySuppressed=true` and `deliverySuppressionReason=vercel_preview`. Zero matching `notification_messages` rows were created. Vercel runtime logs scoped to deployment `dpl_Bb9S7H5fz8qW7ugzcLgRJJjb6o5f` recorded the warning `Admin external notification delivery suppressed for Vercel Preview.` for `POST /api/growth/leads` at `2026-10-20T08:41:09.288Z` (`09:41:09.288` Africa/Lagos), with reason `vercel_preview`. No real recipient was used. |
+| Scale APIs, feature gating, and cross-tenant isolation | **PASS** | Two synthetic active Scale tenants and one synthetic active Starter tenant were created. Scale custom-domain GET returned 200; both tenant-specific custom-domain PATCH requests returned 201. Both tenant-specific custom-integration POST requests returned 201 with `deliveryEnabled=false`; no endpoint delivery was attempted. Scale branding removal PATCH returned 200. Starter access to custom domains, custom integrations, and platform-branding removal returned 403/403/403 and created zero domain, integration, or branding rows. Tenant A's integration list excluded Tenant B's row; Tenant A PATCH and DELETE attempts against Tenant B's integration both returned 404, and direct staging reads confirmed Tenant B's row remained unchanged. Tenant A's domain read returned only Tenant A's hostname, and Tenant B's branding preference remained unchanged. |
+| Carrier duplicate/replay booking rejection | **PASS** | Synthetic same-tenant shipments were seeded with existing non-Fly references for Sendbox and FEZ. Replaying `POST /api/shipments/[trackingId]/carriers/create` returned HTTP 409 for `sendbox` and HTTP 409 for `fez_logistics`, returning the existing reference in each case. Direct staging reads confirmed both shipment rows were byte-for-byte unchanged across the selected carrier fields. Each case created zero shipment audit rows, zero shipment operational events, and zero background jobs. The deployed handler rejected on the existing same-provider reference before carrier rates or carrier-create code, so no Sendbox or FEZ booking call was reached. |
+
+### Synthetic fixture cleanup
+
+Cleanup completed in a guaranteed `finally` path and was directly verified. Residual counts were zero for all synthetic companies, Auth-backed profiles, memberships, shipments, custom integrations, custom domains, branding preferences, growth leads, notification operational events, and notification messages. Cleanup reported no errors. No real notifications, payments, FEZ bookings, or Sendbox bookings occurred.
+
+### External manual evidence retained
+
+- Flutterwave — MANUAL DASHBOARD CONFIRMATION REQUIRED
+- FEZ/Sendbox — APP-SIDE PASS — EXTERNAL SANDBOX LIFECYCLE MANUAL
+
+## Final gate result
+
+**APP-SIDE FINAL STAGING GATE PASS — MANUAL EXTERNAL CONFIRMATIONS REMAIN — PRODUCTION NOT DEPLOYED**
+
 ## Authoritative continuation — 2026-10-19 (Africa/Lagos)
 
 This section supersedes stale blocker lists and scores later in this historical document.
