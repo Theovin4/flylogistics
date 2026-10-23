@@ -72,6 +72,31 @@ Only staging project `vgrcfuaqxwidgdgtnved` was changed. Production project `igl
 
 **NOT READY FOR PRODUCTION DEPLOYMENT**
 
+## Cloud globalization staging evidence — 2026-10-23 (Africa/Lagos)
+
+This is an additive staging checkpoint for branch `cloud-globalization` at baseline `a6773f933e7655c91a44c68be38583429b38d6e4`. Production was not changed or deployed.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Local validation | **PASS** | TypeScript, ESLint, client-secret scan, and 67/67 tests passed. Tests cover country/locale defaults, IANA timezone and DST behavior, record-currency formatting, foreign-currency snapshot matching, server-resolved checkout, catalogue changes between checkout and verification, webhook replay ordering, and service-only schema posture. |
+| Production build | **PASS** | Environment-free isolated build contained zero `.env*` files, compiled successfully, and generated 158/158 static pages. The temporary build copy was removed afterward. |
+| Staging identity | **PASS** | Exact project `vgrcfuaqxwidgdgtnved`, named Fly Logistics Staging, was ACTIVE_HEALTHY. Production ref `igloqgojviveysjazhmu` was not mutated. |
+| Globalization migration | **PASS** | `20261021135732_cloud_globalization.sql` applied only to staging and registered as `20261023210455_cloud_globalization`. |
+| Service-only security | **PASS** | `cloud_plan_prices` and `cloud_fx_rates` have RLS enabled; `anon` and `authenticated` have no SELECT privilege; `service_role` has SELECT/DML privileges. Their no-policy advisor notices are intentional because browser roles must have no path to these tables. |
+| Schema preservation | **PASS** | `companies.locale` exists. All five subscription snapshot fields exist. Both new tables contain zero rows; no fabricated billing catalogue or FX data was seeded. |
+| Runtime Preview | **PENDING** | The branch has not yet been pushed or deployed to Preview. No runtime claim is made for this new globalization code. |
+
+### External evidence retained
+
+- Flutterwave — MANUAL DASHBOARD CONFIRMATION REQUIRED
+- FEZ/Sendbox — APP-SIDE PASS — EXTERNAL SANDBOX LIFECYCLE MANUAL
+
+### Current decision
+
+The code and staging schema gates pass. A matching Preview and synthetic international tenant runtime matrix are still required before a production decision.
+
+**NOT READY FOR PRODUCTION DEPLOYMENT**
+
 ## Scope and safety
 
 This is a continuation of the prior authenticated staging certification, not a restart. The three required staging environment variables were present, and `STAGING_SUPABASE_URL` resolved exactly to `https://vgrcfuaqxwidgdgtnved.supabase.co`. Secret values were not printed, persisted, or committed. Production Supabase ref `igloqgojviveysjazhmu` remained read-only. An initial standard build attempt auto-loaded `.env.local`; it was stopped after the environment banner appeared, during compilation and before static-page generation. The successful isolated build used a copy with no `.env*` files.

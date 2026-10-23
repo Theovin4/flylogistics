@@ -45,6 +45,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ refe
     tenantLogoUrl: company?.logo_url ?? null,
     issuedTo: company?.name ?? access.profile.email ?? "Company workspace",
     currency: String(value(row, "currency") ?? company?.billing_currency ?? "NGN"),
+    locale: company?.locale,
+    timezone: company?.timezone,
+    issuedAt: String(value(row, "updated_at") ?? value(row, "created_at") ?? ""),
     totalAmount: value(row, "amount") ?? company?.billing_amount,
     sections: [
       {

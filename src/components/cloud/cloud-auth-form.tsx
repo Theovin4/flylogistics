@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { AlertTriangle, Building2, CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole, UserPlus } from "lucide-react";
@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { strongPasswordIssue, strongPasswordMinimumLength } from "@/lib/account-security";
+import { TenantLocaleFields } from "@/components/cloud/tenant-locale-fields";
+import { defaultLocaleForCountry, normalizeCountryCode, suggestedBillingCurrencyForCountry, suggestedCurrencyForCountry, supportedCloudBillingCurrencies } from "@/lib/tenant-locale";
 
 type CloudAuthMode = "login" | "signup";
 
@@ -25,7 +27,12 @@ const initialForm = {
   email: "",
   password: "",
   phone: "",
-  slug: ""
+  slug: "",
+  country: "",
+  timezone: "",
+  currency: "",
+  billingCurrency: "USD" as (typeof supportedCloudBillingCurrencies)[number],
+  locale: ""
 };
 
 function slugify(value: string) {
@@ -52,11 +59,31 @@ export function CloudAuthForm({ mode }: { mode: CloudAuthMode }) {
 
   const suggestedSlug = useMemo(() => slugify(form.companyName), [form.companyName]);
 
+  useEffect(() => {
+    if (!isSignup || form.timezone) return;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (timezone) setForm((current) => ({ ...current, timezone, locale: navigator.language || current.locale }));
+  }, [form.timezone, isSignup]);
+
   function updateField<Key extends keyof typeof form>(field: Key, value: (typeof form)[Key]) {
     setForm((current) => ({
       ...current,
       [field]: value,
       ...(field === "companyName" && !current.slug ? { slug: slugify(value) } : {})
+    }));
+  }
+
+  function updateCountry(value: string) {
+    const country = value.toUpperCase();
+    const normalized = normalizeCountryCode(country);
+    setForm((current) => ({
+      ...current,
+      country,
+      ...(normalized ? {
+        currency: suggestedCurrencyForCountry(normalized),
+        billingCurrency: suggestedBillingCurrencyForCountry(normalized),
+        locale: defaultLocaleForCountry(normalized)
+      } : {})
     }));
   }
 
@@ -155,6 +182,27 @@ export function CloudAuthForm({ mode }: { mode: CloudAuthMode }) {
                 <div className="grid gap-2">
                   <Label htmlFor="slug">Company slug</Label>
                   <Input id="slug" value={form.slug || suggestedSlug} onChange={(event) => updateField("slug", slugify(event.target.value))} required />
+                </div>
+                <TenantLocaleFields
+                  prefix="cloud-signup"
+                  country={form.country}
+                  timezone={form.timezone}
+                  currency={form.currency}
+                  onCountryChange={updateCountry}
+                  onTimezoneChange={(value) => updateField("timezone", value)}
+                  onCurrencyChange={(value) => updateField("currency", value)}
+                />
+                <div className="grid gap-2">
+                  <Label htmlFor="billingCurrency">Subscription billing currency</Label>
+                  <select
+                    id="billingCurrency"
+                    className="min-h-11 rounded-md border bg-background px-3 text-sm"
+                    value={form.billingCurrency}
+                    onChange={(event) => updateField("billingCurrency", event.target.value as typeof form.billingCurrency)}
+                  >
+                    {supportedCloudBillingCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                  </select>
+                  <p className="text-xs text-muted-foreground">Operating currency and subscription billing are separate. Checkout uses this currency only when a verified provider plan is available; otherwise the billing page clearly shows the configured fallback.</p>
                 </div>
               </>
             )}

@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   const companyId = access.tenant.companyId;
   const [shipments, customers, drivers, quotes] = await Promise.all([
     supabase.from("shipments")
-      .select("id,status,tracking_id,customer_email,destination_state,delivery_address,driver_id,payment_amount,quoted_price,created_at,updated_at")
+      .select("id,status,tracking_id,customer_email,destination_state,delivery_address,driver_id,payment_amount,quoted_price,quote_currency,created_at,updated_at")
       .eq("company_id", companyId).gte("created_at", since).order("created_at", { ascending: true }).limit(5000),
     supabase.from("cloud_customers").select("id,created_at,last_shipment_at").eq("company_id", companyId).gte("created_at", since).limit(5000),
     supabase.from("drivers").select("id,name,status,approval_status").eq("company_id", companyId).limit(1000),
@@ -44,13 +44,14 @@ export async function GET(request: Request) {
   const dayTrend: Record<string, number> = {};
   let delivered = 0;
   let failed = 0;
-  let revenue = 0;
+  const revenueByCurrency: Record<string, number> = {};
   for (const row of shipmentRows) {
     const status = String(row.status ?? "PENDING").toUpperCase();
     statusDistribution[status] = (statusDistribution[status] ?? 0) + 1;
     if (status === "DELIVERED") delivered += 1;
     if (["FAILED", "CANCELLED", "EXCEPTION"].includes(status)) failed += 1;
-    revenue += amount(row.payment_amount ?? row.quoted_price);
+    const currency = String(row.quote_currency ?? access.tenant.company?.currency ?? "NGN").trim().toUpperCase();
+    revenueByCurrency[currency] = (revenueByCurrency[currency] ?? 0) + amount(row.payment_amount ?? row.quoted_price);
     const destination = String(row.destination_state ?? row.delivery_address ?? "Not set").trim();
     destinationCounts[destination] = (destinationCounts[destination] ?? 0) + 1;
     if (row.driver_id !== null) driverCounts[String(row.driver_id)] = (driverCounts[String(row.driver_id)] ?? 0) + 1;
@@ -68,11 +69,11 @@ export async function GET(request: Request) {
       failed,
       active: shipmentRows.length - delivered - failed,
       successRate: shipmentRows.length ? Math.round((delivered / shipmentRows.length) * 1000) / 10 : 0,
-      revenue,
       newCustomers: customers.data?.length ?? 0,
       activeDrivers: (drivers.data ?? []).filter((driver) => !["offline", "suspended", "rejected"].includes(String(driver.status ?? "").toLowerCase())).length,
       quoteConversion: quotes.data?.length ? Math.round((acceptedQuotes / quotes.data.length) * 1000) / 10 : 0
     },
+    revenueByCurrency: Object.entries(revenueByCurrency).sort(([a], [b]) => a.localeCompare(b)).map(([currency, total]) => ({ currency, amount: total })),
     statusDistribution: Object.entries(statusDistribution).map(([label, value]) => ({ label, value })),
     shipmentTrend: Object.entries(dayTrend).map(([date, value]) => ({ date, value })),
     topDestinations: Object.entries(destinationCounts).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([label, value]) => ({ label, value })),

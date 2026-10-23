@@ -13,9 +13,11 @@ import { Label } from "@/components/ui/label";
 import { AccountPasswordPanel } from "@/components/auth/account-password-panel";
 import { AccountSupportCenter } from "@/components/support/account-support-center";
 import { CloudScaleFeaturesPanel } from "@/components/cloud/cloud-scale-features-panel";
+import { TenantLocaleFields } from "@/components/cloud/tenant-locale-fields";
 import { CloudAnalyticsWorkspace, CloudCustomersWorkspace, CloudDispatchWorkspace, CloudDriversWorkspace, CloudRatesWorkspace, CloudShipmentsWorkspace, CloudTeamWorkspace } from "@/components/cloud/cloud-operations-workspace";
 import { useCloudTenant } from "@/components/cloud/cloud-tenant-context";
-import { cloudBillingPlans, cloudLimitLabel, cloudTrialDaysRemaining, getCloudBillingPlanKey, type CloudBillingPlan } from "@/lib/cloud-plans";
+import { cloudPlanDefinitions, cloudLimitLabel, cloudTrialDaysRemaining, getCloudBillingPlanKey, type CloudBillingPlan } from "@/lib/cloud-plans";
+import { DEFAULT_TENANT_COUNTRY, DEFAULT_TENANT_CURRENCY, DEFAULT_TENANT_LOCALE, DEFAULT_TENANT_TIMEZONE, defaultLocaleForCountry, formatMoney, formatTenantDate, normalizeCountryCode, suggestedCurrencyForCountry } from "@/lib/tenant-locale";
 
 type CloudSection = "overview" | "settings" | "drivers" | "shipments" | "operations" | "customers" | "analytics" | "billing" | "support" | "team" | "rates";
 
@@ -37,6 +39,7 @@ type CloudCompany = {
   country?: string | null;
   timezone?: string | null;
   currency?: string | null;
+  locale?: string | null;
   plan?: string | null;
   status?: string | null;
   subscription_status?: string | null;
@@ -100,20 +103,12 @@ function textValue(value: unknown, fallback = "Not set") {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
-function money(value: unknown) {
-  const amount = Number(value ?? 0);
-  return `NGN ${Number.isFinite(amount) ? amount.toLocaleString("en-NG") : "0"}`;
-}
-
-function dateValue(value: unknown, fallback = "Not scheduled") {
-  if (typeof value !== "string" || !value) return fallback;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toLocaleDateString() : fallback;
-}
+type CloudPriceView = { plan: CloudBillingPlan; amount: number; currency: string; priceVersion: string; billingInterval: "monthly"; configured: boolean; requestedCurrency: string; fallbackCurrency: boolean };
 
 export function CloudDashboard({ section }: { section: CloudSection }) {
   const tenant = useCloudTenant();
   const initialCompany = tenant.company as CloudCompany | null;
+  const initialCountry = normalizeCountryCode(initialCompany?.country) ?? DEFAULT_TENANT_COUNTRY;
   const [overview, setOverview] = useState<CloudOverview | null>({ company: initialCompany, role: tenant.role });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -122,6 +117,7 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
   const [verifyingBilling, setVerifyingBilling] = useState(false);
   const [cancellingBilling, setCancellingBilling] = useState(false);
   const [verifiedBillingRef, setVerifiedBillingRef] = useState<string | null>(null);
+  const [billingPrices, setBillingPrices] = useState<CloudPriceView[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState({
@@ -136,9 +132,10 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
     publicWhatsapp: initialCompany?.public_whatsapp ?? "",
     publicSupportEmail: initialCompany?.public_support_email ?? "",
     showContactOnTracking: initialCompany?.show_contact_on_tracking ?? false,
-    country: initialCompany?.country ?? "Nigeria",
-    timezone: initialCompany?.timezone ?? "Africa/Lagos",
-    currency: initialCompany?.currency ?? "NGN",
+    country: initialCountry,
+    timezone: initialCompany?.timezone ?? DEFAULT_TENANT_TIMEZONE,
+    currency: initialCompany?.currency ?? DEFAULT_TENANT_CURRENCY,
+    locale: initialCompany?.locale ?? defaultLocaleForCountry(initialCountry),
     accentColor: initialCompany?.accent_color ?? ""
   });
 
@@ -151,6 +148,7 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
       if (!response.ok) throw new Error(data.error ?? "Unable to load cloud workspace.");
       setOverview(data);
       tenant.setCompany((data.company ?? null) as never);
+      const loadedCountry = normalizeCountryCode(data.company?.country) ?? DEFAULT_TENANT_COUNTRY;
       setSettings({
         name: data.company?.name ?? "",
         logoUrl: data.company?.logo_url ?? "",
@@ -163,11 +161,15 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
         publicWhatsapp: data.company?.public_whatsapp ?? "",
         publicSupportEmail: data.company?.public_support_email ?? "",
         showContactOnTracking: data.company?.show_contact_on_tracking ?? false,
-        country: data.company?.country ?? "Nigeria",
-        timezone: data.company?.timezone ?? "Africa/Lagos",
-        currency: data.company?.currency ?? "NGN",
+        country: loadedCountry,
+        timezone: data.company?.timezone ?? DEFAULT_TENANT_TIMEZONE,
+        currency: data.company?.currency ?? DEFAULT_TENANT_CURRENCY,
+        locale: data.company?.locale ?? defaultLocaleForCountry(loadedCountry),
         accentColor: data.company?.accent_color ?? ""
       });
+      const pricesResponse = await fetch("/api/cloud/billing/prices", { cache: "no-store" });
+      const pricesData = await pricesResponse.json() as { prices?: CloudPriceView[] };
+      if (pricesResponse.ok) setBillingPrices(pricesData.prices ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load cloud workspace.");
     } finally {
@@ -186,7 +188,9 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
   const activeNav = navItems.find((item) => item.section === section) ?? navItems[0];
   const trialDays = cloudTrialDaysRemaining(company?.trial_ends_at);
   const planKey = overview?.entitlements?.plan ?? getCloudBillingPlanKey(company?.subscription_plan ?? company?.plan);
-  const currentPlan = cloudBillingPlans[planKey];
+  const currentPlan = cloudPlanDefinitions[planKey];
+  const tenantLocale = company?.locale ?? settings.locale ?? DEFAULT_TENANT_LOCALE;
+  const tenantTimezone = company?.timezone ?? settings.timezone ?? DEFAULT_TENANT_TIMEZONE;
   const subscriptionStatus = overview?.entitlements?.billingStatus ?? (company?.subscription_status === "trialing" && trialDays === 0 ? "expired" : company?.subscription_status ?? "pending");
   const workspaceRestricted = overview?.entitlements?.accessState === "restricted";
   const onboardingItems = useMemo(
@@ -202,6 +206,8 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
 
   async function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const existingCurrency = String(company?.currency ?? DEFAULT_TENANT_CURRENCY).toUpperCase();
+    if (settings.currency !== existingCurrency && !window.confirm(`Change the operating currency from ${existingCurrency} to ${settings.currency}? Existing shipments and rate cards keep their stored currency and are not converted.`)) return;
     setSaving(true);
     setMessage(null);
     setError(null);
@@ -221,6 +227,16 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  function updateSettingsCountry(value: string) {
+    const country = value.toUpperCase();
+    const normalized = normalizeCountryCode(country);
+    setSettings((current) => ({
+      ...current,
+      country,
+      ...(normalized ? { currency: suggestedCurrencyForCountry(normalized), locale: defaultLocaleForCountry(normalized) } : {})
+    }));
   }
 
   async function uploadLogo(file: File) {
@@ -510,17 +526,23 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                 <CardContent className="grid gap-4 md:grid-cols-4">
                   <BillingStat label="Current plan" value={currentPlan.name} />
                   <BillingStat label="Subscription" value={subscriptionStatus} />
-                  <BillingStat label="Next billing" value={dateValue(company?.subscription_renews_at, subscriptionStatus === "trialing" ? `${trialDays} trial days left` : "Not scheduled")} />
+                  <BillingStat label="Next billing" value={formatTenantDate(company?.subscription_renews_at, tenantTimezone, tenantLocale, subscriptionStatus === "trialing" ? `${trialDays} trial days left` : "Not scheduled")} />
                   <BillingStat label="Last billing" value={company?.last_billing_status ?? "Not started"} />
                 </CardContent>
               </Card>
+              <div className="grid gap-4 md:grid-cols-2">
+                <BillingStat label="Operating currency" value={company?.currency ?? DEFAULT_TENANT_CURRENCY} />
+                <BillingStat label="Subscription billing currency" value={company?.billing_currency ?? DEFAULT_TENANT_CURRENCY} />
+              </div>
               <div className="grid gap-4 md:grid-cols-3">
                 <BillingStat label="Team usage" value={`${overview?.usage?.members ?? 0} / ${currentPlan.maxUsers ?? "Unlimited"}`} />
                 <BillingStat label="Driver usage" value={`${overview?.usage?.drivers ?? 0} / ${currentPlan.maxDrivers ?? "Unlimited"}`} />
                 <BillingStat label="Plan limits" value={`${cloudLimitLabel(currentPlan.maxUsers, "users")} / ${cloudLimitLabel(currentPlan.maxDrivers, "drivers")}`} />
               </div>
               <div className="grid gap-4 lg:grid-cols-3">
-                {(Object.entries(cloudBillingPlans) as Array<[CloudBillingPlan, (typeof cloudBillingPlans)[CloudBillingPlan]]>).map(([key, plan]) => (
+                {(Object.entries(cloudPlanDefinitions) as Array<[CloudBillingPlan, (typeof cloudPlanDefinitions)[CloudBillingPlan]]>).map(([key, plan]) => {
+                  const price = billingPrices.find((item) => item.plan === key);
+                  return (
                   <Card key={key} className={`glass ${key === planKey ? "border-primary/50" : ""}`}>
                     <CardHeader>
                       <div className="flex items-center justify-between gap-3">
@@ -530,8 +552,10 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                           {key === planKey && <Badge className="bg-primary text-primary-foreground">Current</Badge>}
                         </div>
                       </div>
-                      <div className="mt-4 text-3xl font-black">{money(plan.amount)}</div>
+                      <div className="mt-4 text-3xl font-black">{price ? formatMoney(price.amount, price.currency, tenantLocale) : "Price unavailable"}</div>
                       <p className="text-sm text-muted-foreground">monthly billing</p>
+                      {price?.fallbackCurrency && <p className="mt-2 text-xs text-amber-500">Your workspace operates in {company?.currency}, but Fly Logistics Cloud subscription billing is currently charged in {price.currency}.</p>}
+                      {price && !price.configured && <p className="mt-2 text-xs text-amber-500">Checkout is unavailable until this provider plan is manually configured and verified.</p>}
                     </CardHeader>
                     <CardContent>
                       <p className="text-sm leading-7 text-muted-foreground">{plan.description}</p>
@@ -544,13 +568,14 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                           </div>
                         ))}
                       </div>
-                      <Button className="mt-6 w-full" onClick={() => startBillingCheckout(key)} disabled={billingPlan !== null}>
+                      <Button className="mt-6 w-full" onClick={() => startBillingCheckout(key)} disabled={billingPlan !== null || !price?.configured}>
                         {billingPlan === key ? <Loader2 className="animate-spin" /> : <CreditCard />}
                         {key === planKey ? "Renew or confirm plan" : `Switch to ${plan.name}`}
                       </Button>
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
               <Card className="glass">
                 <CardHeader>
@@ -564,11 +589,11 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                       <div key={`${textValue(row.payment_reference, String(index))}-${index}`} className="grid gap-3 rounded-md border bg-background/45 p-4 text-sm md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center">
                         <div>
                           <div className="font-mono font-black">{textValue(row.payment_reference, "Subscription payment")}</div>
-                          <div className="text-muted-foreground">Renews: {dateValue(row.renewal_date)}</div>
+                          <div className="text-muted-foreground">Renews: {formatTenantDate(typeof row.renewal_date === "string" ? row.renewal_date : null, tenantTimezone, tenantLocale)}</div>
                         </div>
                         <Badge className="w-fit border-primary/40 bg-primary/10 text-primary">{textValue(row.plan)}</Badge>
                         <Badge className="w-fit">{textValue(row.status)}</Badge>
-                        <div className="font-black">{money(row.amount)}</div>
+                        <div className="font-black">{formatMoney(Number(row.amount ?? 0), typeof row.currency === "string" ? row.currency : company?.billing_currency, tenantLocale)}</div>
                         {row.payment_reference ? (
                           <Button asChild size="sm" variant="outline">
                             <a href={`/api/cloud/billing/receipts/${encodeURIComponent(textValue(row.payment_reference))}/pdf`} target="_blank" rel="noreferrer">
@@ -647,9 +672,16 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                         <p className="text-xs text-muted-foreground">PNG, JPEG, or WebP. Maximum 5 MB. Horizontal and square logos are supported.</p>
                       </div>
                       <div className="grid gap-2 md:col-span-2"><Label htmlFor="businessAddress">Business address</Label><Input id="businessAddress" value={settings.businessAddress} onChange={(event) => setSettings((current) => ({ ...current, businessAddress: event.target.value }))} /></div>
-                      <div className="grid gap-2"><Label htmlFor="country">Country</Label><Input id="country" value={settings.country} onChange={(event) => setSettings((current) => ({ ...current, country: event.target.value }))} /></div>
-                      <div className="grid gap-2"><Label htmlFor="timezone">Timezone</Label><Input id="timezone" value={settings.timezone} onChange={(event) => setSettings((current) => ({ ...current, timezone: event.target.value }))} /></div>
-                      <div className="grid gap-2"><Label htmlFor="currency">Currency</Label><Input id="currency" maxLength={3} value={settings.currency} onChange={(event) => setSettings((current) => ({ ...current, currency: event.target.value.toUpperCase() }))} /></div>
+                      <TenantLocaleFields
+                        prefix="cloud-settings"
+                        country={settings.country}
+                        timezone={settings.timezone}
+                        currency={settings.currency}
+                        onCountryChange={updateSettingsCountry}
+                        onTimezoneChange={(value) => setSettings((current) => ({ ...current, timezone: value }))}
+                        onCurrencyChange={(value) => setSettings((current) => ({ ...current, currency: value }))}
+                      />
+                      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground md:col-span-2">Changing operating currency affects only new defaults. Existing shipments, payments, and rate cards retain their stored currency and are never converted automatically.</div>
                       <div className="grid gap-2"><Label htmlFor="accentColor">Accent color</Label><Input id="accentColor" type="color" value={settings.accentColor || settings.brandColor} onChange={(event) => setSettings((current) => ({ ...current, accentColor: event.target.value }))} /></div>
                     </div>
                     <div className="grid gap-4 rounded-md border p-4">

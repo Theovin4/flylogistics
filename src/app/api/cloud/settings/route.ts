@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { requireCompanyRole } from "@/server/tenancy";
 import { normalizePublicPhone } from "@/lib/tenant-branding";
+import { isValidCurrencyCode, isValidIanaTimezone, normalizeCountryCode, normalizeTenantLocale } from "@/lib/tenant-locale";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ const settingsSchema = z.object({
   country: z.string().trim().min(2).max(100).optional(),
   timezone: z.string().trim().min(2).max(100).optional(),
   currency: z.string().trim().regex(/^[A-Z]{3}$/).optional(),
+  locale: z.string().trim().min(2).max(35).optional(),
   accentColor: z.string().trim().regex(/^#[0-9a-f]{6}$/i).optional().or(z.literal(""))
   ,publicAddress: z.string().trim().max(300).optional().or(z.literal(""))
   ,publicPhone: z.string().trim().max(40).refine((value) => !value || Boolean(normalizePublicPhone(value)), "Use an international number with country code, for example +2347061072929.").optional().or(z.literal(""))
@@ -54,6 +56,15 @@ export async function PATCH(request: Request) {
   if (!supabase) return NextResponse.json({ error: "Cloud settings are temporarily unavailable." }, { status: 503 });
   if (!access.tenant.companyId) return NextResponse.json({ error: "Company workspace is not configured." }, { status: 409 });
 
+  const country = parsed.data.country === undefined ? undefined : normalizeCountryCode(parsed.data.country);
+  if (parsed.data.country !== undefined && !country) return NextResponse.json({ error: "Choose a valid ISO country." }, { status: 400 });
+  if (parsed.data.timezone !== undefined && !isValidIanaTimezone(parsed.data.timezone)) {
+    return NextResponse.json({ error: "Choose a valid IANA timezone such as Europe/London." }, { status: 400 });
+  }
+  if (parsed.data.currency !== undefined && !isValidCurrencyCode(parsed.data.currency)) {
+    return NextResponse.json({ error: "Choose a valid ISO-4217 operating currency." }, { status: 400 });
+  }
+
   const updates = {
     ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
     ...(parsed.data.logoUrl !== undefined ? { logo_url: parsed.data.logoUrl || null } : {}),
@@ -61,9 +72,10 @@ export async function PATCH(request: Request) {
     ...(parsed.data.supportEmail !== undefined ? { support_email: parsed.data.supportEmail || null } : {}),
     ...(parsed.data.supportPhone !== undefined ? { support_phone: parsed.data.supportPhone || null } : {}),
     ...(parsed.data.businessAddress !== undefined ? { business_address: parsed.data.businessAddress || null } : {}),
-    ...(parsed.data.country !== undefined ? { country: parsed.data.country } : {}),
+    ...(country !== undefined ? { country } : {}),
     ...(parsed.data.timezone !== undefined ? { timezone: parsed.data.timezone } : {}),
     ...(parsed.data.currency !== undefined ? { currency: parsed.data.currency } : {}),
+    ...(parsed.data.locale !== undefined ? { locale: normalizeTenantLocale(parsed.data.locale, country ?? access.tenant.company?.country) } : {}),
     ...(parsed.data.accentColor !== undefined ? { accent_color: parsed.data.accentColor || null } : {}),
     ...(parsed.data.publicAddress !== undefined ? { public_address: parsed.data.publicAddress || null } : {}),
     ...(parsed.data.publicPhone !== undefined ? { public_phone: normalizePublicPhone(parsed.data.publicPhone) } : {}),
@@ -78,7 +90,7 @@ export async function PATCH(request: Request) {
     .from("companies")
     .update(updates)
     .eq("id", access.tenant.companyId)
-    .select("id,name,slug,logo_url,logo_storage_path,brand_color,accent_color,support_email,support_phone,business_address,public_address,public_phone,public_whatsapp,public_support_email,show_contact_on_tracking,branding_updated_at,country,timezone,currency,custom_domain,plan,status,subscription_status,subscription_plan,trial_ends_at,billing_email,billing_currency,billing_amount,flutterwave_subscription_reference,subscription_started_at,subscription_renews_at,last_billing_reference,last_billing_status,created_at,updated_at")
+    .select("id,name,slug,logo_url,logo_storage_path,brand_color,accent_color,support_email,support_phone,business_address,public_address,public_phone,public_whatsapp,public_support_email,show_contact_on_tracking,branding_updated_at,country,timezone,currency,locale,custom_domain,plan,status,subscription_status,subscription_plan,trial_ends_at,billing_email,billing_currency,billing_amount,flutterwave_subscription_reference,subscription_started_at,subscription_renews_at,last_billing_reference,last_billing_status,created_at,updated_at")
     .single();
 
   if (error) return NextResponse.json({ error: "Unable to update company settings.", details: error.message }, { status: 500 });

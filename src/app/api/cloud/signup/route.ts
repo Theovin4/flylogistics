@@ -7,6 +7,13 @@ import { enforceRateLimit, parseJson } from "@/server/api";
 import { logApiError, logAuthError, requestContext } from "@/server/monitoring";
 import { isTenantSchemaMissing, removeDefaultCompanyMembership } from "@/server/tenancy";
 import { strongPasswordIssue } from "@/lib/account-security";
+import {
+  isValidCurrencyCode,
+  isValidIanaTimezone,
+  normalizeCountryCode,
+  normalizeTenantLocale,
+  supportedCloudBillingCurrencies
+} from "@/lib/tenant-locale";
 
 const signupSchema = z.object({
   companyName: z.string().trim().min(2).max(160),
@@ -17,7 +24,12 @@ const signupSchema = z.object({
     if (issue) context.addIssue({ code: z.ZodIssueCode.custom, message: issue });
   }),
   phone: z.string().trim().min(5).max(40),
-  slug: z.string().trim().min(2).max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/i)
+  slug: z.string().trim().min(2).max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/i),
+  country: z.string().trim().min(2).max(100),
+  timezone: z.string().trim().min(3).max(100).refine(isValidIanaTimezone, "Choose a valid IANA timezone."),
+  currency: z.string().trim().toUpperCase().refine(isValidCurrencyCode, "Choose a valid ISO-4217 currency."),
+  billingCurrency: z.enum(supportedCloudBillingCurrencies),
+  locale: z.string().trim().min(2).max(35).optional()
 });
 
 function normalizeSlug(value: string) {
@@ -41,6 +53,8 @@ export async function POST(request: Request) {
 
   const slug = normalizeSlug(parsed.data.slug);
   if (!slug) return NextResponse.json({ error: "Choose a valid company slug." }, { status: 400 });
+  const country = normalizeCountryCode(parsed.data.country);
+  if (!country) return NextResponse.json({ error: "Choose a valid ISO country." }, { status: 400 });
 
   const existingCompany = await supabase.from("companies").select("id").eq("slug", slug).maybeSingle();
   if (existingCompany.error && isTenantSchemaMissing(existingCompany.error)) {
@@ -88,7 +102,11 @@ export async function POST(request: Request) {
       subscription_plan: "starter",
       trial_ends_at: cloudTrialEndsAt(),
       billing_email: parsed.data.email,
-      billing_currency: "NGN",
+      country,
+      timezone: parsed.data.timezone,
+      currency: parsed.data.currency,
+      locale: normalizeTenantLocale(parsed.data.locale, country),
+      billing_currency: parsed.data.billingCurrency,
       billing_amount: 0
     })
     .select("*")

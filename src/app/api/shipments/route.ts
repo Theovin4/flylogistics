@@ -22,6 +22,7 @@ import { shipmentMarginPercent, shipmentProfit } from "@/lib/shipment-finance";
 import { makeTimelineEvent, shipmentWithDriverSelect, statusTimelineEvent } from "@/lib/shipment-data";
 import { whatsappMessages } from "@/lib/whatsapp";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { DEFAULT_TENANT_COUNTRY, DEFAULT_TENANT_CURRENCY, isValidCurrencyCode, normalizeCountryCode, normalizeCurrencyCode } from "@/lib/tenant-locale";
 import { handleApiError, parseJson } from "@/server/api";
 import { notifyAdmin } from "@/server/admin-notifications";
 import { writeAuditLog } from "@/server/audit";
@@ -45,7 +46,7 @@ const shipmentSchema = z.object({
   trackingId: z.string().trim().optional(),
   deliveryCategory: z.enum(deliveryCategoryValues).default("local_nigeria"),
   freightMode: z.enum(["air_freight", "sea_freight"]).optional(),
-  quoteCurrency: z.enum(["NGN", "USD", "EUR", "GBP"]).default("NGN"),
+  quoteCurrency: z.string().trim().length(3).refine(isValidCurrencyCode, "Use a valid ISO 4217 currency code.").optional(),
   freightClassification: z.enum(["documents", "general_cargo", "ecommerce_goods", "electronics", "fashion", "fragile", "oversized", "restricted_review"]).default("general_cargo"),
   pickupCountry: z.string().trim().max(120).optional(),
   destinationCountry: z.string().trim().max(120).optional(),
@@ -322,7 +323,16 @@ export async function POST(request: Request) {
   const requestedCarrier = normalizeCarrierProvider(parsed.data.carrierProvider);
   const deliveryCategory: DeliveryCategory = parsed.data.deliveryCategory ?? "local_nigeria";
   const urgency = pricingUrgency(parsed.data.urgency);
-  const pricingQuote = await calculateLogisticsPrice({
+  const isCloudTenant = ownership.source === "cloud_tenant";
+  const tenantCurrency = normalizeCurrencyCode(tenant.company?.currency, DEFAULT_TENANT_CURRENCY);
+  const tenantCountry = normalizeCountryCode(tenant.company?.country) ?? DEFAULT_TENANT_COUNTRY;
+  const pricingQuote = isCloudTenant ? {
+    amount: 0,
+    vehicleType: null,
+    etaLabel: null,
+    etaHours: null,
+    deliveryType: "Domestic delivery"
+  } : await calculateLogisticsPrice({
     pickupState: parsed.data.pickupState,
     destinationState: parsed.data.destinationState,
     pickupCountry: parsed.data.pickupCountry,
@@ -349,6 +359,9 @@ export async function POST(request: Request) {
         weightKg: parsed.data.weightKg ?? 1
       })
     : null;
+  if (isCloudTenant && !tenantRate) {
+    return NextResponse.json({ error: "No active company rate covers this service and route. Create a matching rate card before creating the shipment." }, { status: 409 });
+  }
   const effectivePrice = tenantRate?.amount ?? Number(pricingQuote.amount ?? 0);
   const paymentAmount = Number(effectivePrice);
   const driverPayoutAmount = Number(parsed.data.driverPayoutAmount ?? 0);
@@ -366,7 +379,17 @@ export async function POST(request: Request) {
   }
   const trackingId = parsed.data.trackingId?.toUpperCase() || makeTrackingId();
   const paymentReference = paymentAmount > 0 ? `FLY-ADMIN-SHIPMENT-${trackingId}-${Date.now()}` : null;
-  const etaEstimate = estimateShipmentEta({
+  const etaEstimate = isCloudTenant ? {
+    etaHours: tenantRate?.etaHours ?? 24,
+    etaLabel: tenantRate?.etaLabel ?? "ETA to be confirmed",
+    distanceKm: 0,
+    confidence: 0,
+    trafficAssumption: "moderate" as const,
+    deliveryType: deliveryCategory === "local_nigeria" ? "Domestic delivery" : deliveryCategory.replaceAll("_", " "),
+    pickupStateCode: "",
+    destinationStateCode: "",
+    vehicleType: verifiedDriverVehicleType ?? "vehicle"
+  } : estimateShipmentEta({
     pickupState: parsed.data.pickupState,
     destinationState: parsed.data.destinationState,
     pickupAddress: parsed.data.pickupAddress,
@@ -382,7 +405,7 @@ export async function POST(request: Request) {
     ...(parsed.data.driverId ? [makeTimelineEvent("Driver assigned", parsed.data.pickupAddress)] : []),
     ...(status !== "PENDING" ? [statusTimelineEvent(status, parsed.data.deliveryAddress)] : [])
   ];
-  const internationalSummary = isInternationalCategory(deliveryCategory)
+  const internationalSummary = !isCloudTenant && isInternationalCategory(deliveryCategory)
     ? buildInternationalOperationsSummary({
         amountNgn: paymentAmount,
         deliveryCategory,
@@ -414,14 +437,14 @@ export async function POST(request: Request) {
     recipient_name: parsed.data.recipientName || null,
     pickup_phone: parsed.data.pickupPhone || parsed.data.customerPhone || null,
     delivery_phone: parsed.data.deliveryPhone || parsed.data.customerPhone || null,
-    pickup_country: parsed.data.pickupCountry || (deliveryCategory === "international_import" ? null : "Nigeria"),
-    destination_country: parsed.data.destinationCountry || (deliveryCategory === "international_export" ? null : "Nigeria"),
+    pickup_country: parsed.data.pickupCountry || (deliveryCategory === "international_import" ? null : isCloudTenant ? tenantCountry : "Nigeria"),
+    destination_country: parsed.data.destinationCountry || (deliveryCategory === "international_export" ? null : isCloudTenant ? tenantCountry : "Nigeria"),
     pickup_address: parsed.data.pickupAddress,
     delivery_address: parsed.data.deliveryAddress,
     delivery_category: deliveryCategory,
     shipment_type: shipmentTypeFromDeliveryCategory(deliveryCategory),
     freight_mode: internationalSummary?.freightMode ?? parsed.data.freightMode ?? null,
-    quote_currency: internationalSummary?.quoteCurrency ?? parsed.data.quoteCurrency ?? "NGN",
+    quote_currency: tenantRate?.currency ?? internationalSummary?.quoteCurrency ?? parsed.data.quoteCurrency ?? (isCloudTenant ? tenantCurrency : "NGN"),
     freight_classification: internationalSummary?.freightClassification ?? parsed.data.freightClassification ?? null,
     commercial_invoice: internationalSummary
       ? {

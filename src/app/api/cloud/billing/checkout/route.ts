@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { CloudBillingPlan } from "@/lib/cloud-plans";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
-import { createCloudSubscriptionCheckout, persistCloudBillingCheckout } from "@/server/cloud-billing";
+import { createCloudSubscriptionCheckout } from "@/server/cloud-billing";
 import { logPaymentError } from "@/server/monitoring";
 import { requireCompanyRole } from "@/server/tenancy";
 
@@ -30,12 +30,15 @@ export async function POST(request: Request) {
 
   try {
     const checkout = await createCloudSubscriptionCheckout({
+      supabase,
       company: {
         id: access.tenant.companyId,
         slug: access.tenant.company.slug,
         name: access.tenant.company.name,
         support_email: access.tenant.company.support_email,
-        support_phone: access.tenant.company.support_phone
+        support_phone: access.tenant.company.support_phone,
+        billing_currency: access.tenant.company.billing_currency,
+        locale: access.tenant.company.locale
       },
       owner: {
         email: access.profile.email ?? access.tenant.company.support_email ?? "billing@flylogistics.com.ng",
@@ -45,22 +48,17 @@ export async function POST(request: Request) {
       plan: parsed.data.plan as CloudBillingPlan
     });
 
-    const saved = await persistCloudBillingCheckout(supabase, access.tenant.companyId, {
-      plan: parsed.data.plan as CloudBillingPlan,
-      reference: checkout.txRef,
-      amount: checkout.amount,
-      currency: checkout.currency
-    });
-
-    if (saved.error) throw saved.error;
-
     return NextResponse.json({
       ok: true,
       checkoutUrl: checkout.checkoutUrl,
       reference: checkout.txRef,
       amount: checkout.amount,
       currency: checkout.currency,
-      company: saved.data
+      priceVersion: checkout.priceVersion,
+      provider: checkout.provider,
+      requestedCurrency: checkout.requestedCurrency,
+      fallbackCurrency: checkout.fallbackCurrency,
+      company: checkout.company
     });
   } catch (error) {
     logPaymentError(error, "Unable to create Fly Logistics Cloud subscription checkout.", {

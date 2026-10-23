@@ -19,6 +19,10 @@ export type TenantBrandProfile = {
   show_contact_on_tracking?: boolean | null;
   support_email?: string | null;
   support_phone?: string | null;
+  country?: string | null;
+  timezone?: string | null;
+  currency?: string | null;
+  locale?: string | null;
   plan?: string | null;
   subscription_plan?: string | null;
   subscription_status?: string | null;
@@ -28,7 +32,7 @@ export type TenantBrandProfile = {
 
 export type PublicTenantProfile = Pick<
   TenantBrandProfile,
-  "name" | "slug" | "logo_url" | "brand_color" | "public_address" | "public_phone" | "public_whatsapp" | "public_support_email" | "show_contact_on_tracking"
+  "name" | "slug" | "logo_url" | "brand_color" | "public_address" | "public_phone" | "public_whatsapp" | "public_support_email" | "show_contact_on_tracking" | "country" | "timezone" | "currency" | "locale"
 > & { platform_branding_removed: boolean };
 
 export function normalizeTenantColor(value?: string | null, fallback = DEFAULT_TENANT_COLOR) {
@@ -94,6 +98,10 @@ export function publicTenantProfile(company: TenantBrandProfile, platformBrandin
     public_whatsapp: normalizePublicPhone(company.public_whatsapp),
     public_support_email: company.public_support_email?.trim().toLowerCase() || null,
     show_contact_on_tracking: company.show_contact_on_tracking === true,
+    country: company.country ?? null,
+    timezone: company.timezone ?? null,
+    currency: company.currency ?? null,
+    locale: company.locale ?? null,
     platform_branding_removed: platformBrandingRemoved && hasCloudFeature(resolveCloudEntitlements(company), "remove_platform_branding")
   };
 }

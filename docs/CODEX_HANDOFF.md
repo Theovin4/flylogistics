@@ -63,6 +63,46 @@ This section supersedes the historical checkpoints below.
 
 **NOT READY FOR PRODUCTION DEPLOYMENT**
 
+## Cloud globalization checkpoint — 2026-10-23 (Africa/Lagos)
+
+This section supersedes older globalization and staging-migration status above.
+
+- Repository: `C:\Users\USER\Documents\New project\fly-logistics`
+- Branch: `cloud-globalization`
+- Baseline commit: `a6773f933e7655c91a44c68be38583429b38d6e4`
+- Production remains unchanged. No production deployment, database write, payment, notification, or carrier booking occurred.
+- Tenant globalization now uses ISO country codes, IANA timezones, BCP 47 locales, and per-record ISO currencies. Nigeria remains the backward-compatible default.
+- Cloud plan entitlements are separate from the versioned billing catalogue. Existing NGN prices remain Starter 25,000, Growth 75,000, and Scale 200,000 monthly.
+- Checkout accepts only a plan selection. The server resolves and persists an immutable price/currency/provider-plan/version snapshot before redirecting to Flutterwave; an unpaid attempt does not change active company billing facts.
+- Callback and webhook verification use the persisted snapshot and do not re-resolve the live catalogue. Duplicate webhook state exits before database or notification side effects.
+- Public pricing advertises a currency only when active Starter, Growth, and Scale catalogue rows are present. FX data is isolated from charging and payment verification.
+- Local validation passed TypeScript, ESLint, client-secret scanning, and 67/67 tests. An environment-free production build passed and generated 158/158 static pages.
+- Migration `20261021135732_cloud_globalization.sql` was applied only to staging project `vgrcfuaqxwidgdgtnved`, registered as `20261023210455_cloud_globalization`.
+- Staging verification: locale column present; five subscription snapshot columns present; catalogue and FX tables have RLS; `anon` and `authenticated` have no table access; `service_role` has access; both tables contain zero rows.
+- Supabase reports the two new tables as RLS-without-policy. This is intentional service-only posture, not a missing tenant policy.
+- No foreign-currency Flutterwave provider plans were invented or activated. See `docs/CLOUD_GLOBAL_BILLING_CONFIGURATION.md` for the controlled provider checklist.
+
+### Progress checklist
+
+- [x] Recover and audit the existing globalization work.
+- [x] Preserve Nigeria behavior and existing subscription values.
+- [x] Add locale-aware UI, record-currency formatting, and currency-grouped analytics.
+- [x] Add service-only versioned plan catalogue and FX cache migration.
+- [x] Bind checkout, callback, and webhook handling to immutable billing snapshots.
+- [x] Add catalogue-change and webhook-replay regression checks.
+- [x] Pass full local validation and an environment-free production build.
+- [x] Apply and verify the additive migration on staging only.
+- [ ] Commit and push the release candidate, excluding the pre-existing untracked runtime script.
+- [ ] Deploy only the branch to Preview and verify the exact matching deployment.
+- [ ] Run synthetic international tenant and billing runtime checks, then verify complete cleanup.
+- [ ] Obtain Flutterwave dashboard confirmation for every enabled currency/plan mapping.
+
+### Next recommended action
+
+Commit and push the validated branch, wait for its exact Vercel Preview to become READY, then run only staging-safe synthetic international tenant scenarios. Do not enable a non-NGN billing currency until all three approved Flutterwave recurring plan IDs for that currency are configured and independently verified.
+
+**NOT READY FOR PRODUCTION DEPLOYMENT**
+
 ## Authenticated staging checkpoint — 2026-10-16
 
 - Repository: `C:\Users\USER\Documents\New project\fly-logistics`

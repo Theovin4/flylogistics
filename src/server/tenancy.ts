@@ -29,6 +29,7 @@ export type CloudCompany = {
   country?: string | null;
   timezone?: string | null;
   currency?: string | null;
+  locale?: string | null;
   custom_domain?: string | null;
   plan?: string | null;
   status?: string | null;
@@ -58,7 +59,7 @@ type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 type TenantSchemaError = { code?: string; message?: string } | null | undefined;
 
 const COMPANY_SELECT =
-  "id,name,slug,logo_url,logo_storage_path,brand_color,accent_color,support_email,support_phone,business_address,public_address,public_phone,public_whatsapp,public_support_email,show_contact_on_tracking,branding_updated_at,country,timezone,currency,custom_domain,plan,status,subscription_status,subscription_plan,trial_ends_at,billing_email,billing_currency,billing_amount,flutterwave_subscription_reference,subscription_started_at,subscription_renews_at,last_billing_reference,last_billing_status,created_at,updated_at";
+  "id,name,slug,logo_url,logo_storage_path,brand_color,accent_color,support_email,support_phone,business_address,public_address,public_phone,public_whatsapp,public_support_email,show_contact_on_tracking,branding_updated_at,country,timezone,currency,locale,custom_domain,plan,status,subscription_status,subscription_plan,trial_ends_at,billing_email,billing_currency,billing_amount,flutterwave_subscription_reference,subscription_started_at,subscription_renews_at,last_billing_reference,last_billing_status,created_at,updated_at";
 
 export function isTenantSchemaMissing(error: TenantSchemaError) {
   return error?.code === "42P01" || error?.code === "42703" || error?.code === "PGRST204";
