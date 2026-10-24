@@ -86,7 +86,9 @@ This is an additive staging checkpoint for branch `cloud-globalization` at basel
 | Schema preservation | **PASS** | `companies.locale` exists. All five subscription snapshot fields exist. Both new tables contain zero rows; no fabricated billing catalogue or FX data was seeded. |
 | Runtime Preview | **PARTIAL PASS** | Exact deployment `dpl_7trHongCTGJH8jEahirpJPYVMH49` for commit `0cac878fb41ddeab596f449a2521ae4549483d43` became READY. Health returned 200. A complete synthetic GBP catalogue rendered £19/£59/£149; unsupported USD did not render those GBP prices; after deletion GBP was no longer advertised and NGN remained. Runtime logs had no warning/error/fatal entries. |
 | Synthetic cleanup | **PASS** | All three GBP catalogue rows were deleted in a guaranteed cleanup path. Direct staging query returned zero rows for price version `codex-global-preview-20261024`. No checkout or provider call occurred. |
-| Authenticated international tenants | **BLOCKED** | The four approved staging process variables were absent. Production-targeted `.env.local` was not read. Authenticated tenant settings, rate-card, analytics, billing-fallback, and isolation flows therefore remain uncertified on this Preview. |
+| Authenticated international tenants | **PASS** | On 2026-10-24, the four approved staging variables were present in the process and the URL matched `vgrcfuaqxwidgdgtnved`. Six Preview signups (NG, GB, US, KE, ZA, FR) persisted and reloaded the requested country, locale, IANA timezone, and operating currency: localization 12/12, timezone/DST 16/16 after accepting Supabase's equivalent `+00:00` UTC serialization, operating currencies 14/14, grouped analytics 3/3, billing separation 13/13, and focused isolation 8/8. Database timezone was `UTC` with offset zero and the audited date columns were `timestamptz`. |
+| Unsupported billing checkout | **PASS** | Fix commit `7e6c6084596767dd0e062c5f82f62036af361899` was deployed only to exact READY Preview `dpl_F4B1LaWbuTKPvB3f7bZ4edRHKzb3` (`target=null`, no alias error). A guarded staging run passed 16/16: unconfigured explicit USD returned safe 409 responses from price and checkout APIs, malicious client pricing/provider facts were ignored, and subscription count plus company billing state stayed unchanged. A complete temporary USD catalogue then resolved exact USD 19/59/149 facts and trusted fake mappings through GET only; no configured-catalogue checkout was attempted. Provider calls were zero, Vercel had no Flutterwave or error/fatal runtime logs, and all six cleanup categories were zero. |
+| Authenticated synthetic cleanup | **PASS** | The six Auth users and all attributable companies, memberships, profiles, rate cards, subscriptions, shipments, operational events, catalogue fixtures, and FX fixtures were removed. Post-cleanup residual counts were zero in every category. No payment, carrier booking, SMS, WhatsApp, or customer email was triggered. |
 
 ### External evidence retained
 
@@ -95,9 +97,9 @@ This is an additive staging checkpoint for branch `cloud-globalization` at basel
 
 ### Current decision
 
-The code, staging schema, exact Preview, public catalogue, unsupported-currency display, and fixture-cleanup gates pass. Authenticated international tenant runtime scenarios and manual provider confirmation are still required before a production decision.
+The code, staging schema, exact Preview, public catalogue, authenticated international tenant localization, multi-currency analytics, tenant isolation, strict subscription-currency rejection, and cleanup gates pass. Cloud globalization is Preview-ready. Manual provider confirmation remains required before enabling a real foreign billing catalogue, and no production deployment or provider configuration was performed.
 
-**NOT READY FOR PRODUCTION DEPLOYMENT**
+**CLOUD GLOBALIZATION PREVIEW READY — PRODUCTION NOT DEPLOYED**
 
 ## Scope and safety
 

@@ -12,6 +12,10 @@ Existing Nigeria pricing remains unchanged:
 
 Existing active subscriptions retain their stored amount, currency, provider plan, and price version.
 
+The 2026-10-24 blocker is closed. The resolver no longer substitutes NGN when an explicit foreign subscription currency lacks a complete catalogue. Invalid or unsupported codes and incomplete foreign catalogues return a safe HTTP 409 before a subscription snapshot, company billing mutation, or Flutterwave call. Only a missing legacy value or explicit NGN may use the existing NGN compatibility path.
+
+Exact Preview `dpl_F4B1LaWbuTKPvB3f7bZ4edRHKzb3` at commit `7e6c6084596767dd0e062c5f82f62036af361899` passed the guarded staging retest 16/16. The unconfigured USD checkout path produced no subscription/company changes and ignored malicious client pricing facts. A complete temporary USD catalogue resolved USD 19/59/149 and the expected provider mappings without invoking checkout. Provider calls were zero, runtime error/Flutterwave log searches were empty, and cleanup residuals were zero. This certifies application fail-closed behavior; it does not replace the manual provider checklist below or authorize a production deployment.
+
 ## Provider configuration checklist
 
 Complete this in an approved Flutterwave sandbox or dashboard before enabling a new currency. Never paste secret keys into this document.

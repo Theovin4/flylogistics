@@ -67,6 +67,14 @@ The following findings are outside the Cloud globalization correction unless a C
 - Active subscription currency is not mutated in place.
 - No live provider plan creation or charge is part of this development task.
 
+## Authenticated Preview certification — 2026-10-24
+
+The exact READY Preview `dpl_7trHongCTGJH8jEahirpJPYVMH49` at commit `0cac878fb41ddeab596f449a2521ae4549483d43` passed the remaining authenticated tenant matrix against staging `vgrcfuaqxwidgdgtnved`. Six synthetic tenants covered Nigeria, the United Kingdom, the United States, Kenya, South Africa, and France. Country, locale, timezone, and operating currency persisted through signup and settings reload; rate cards retained their stored currencies; operating-currency changes did not rewrite historical rates or shipments or change the stored subscription billing currency; GBP and USD analytics remained separate; and focused Tenant A/B reads and mutations were safely denied. UTC storage and London/New York DST rendering were confirmed. All attributable rows and Auth users were removed with zero residuals. Production was not accessed or changed.
+
+The billing blocker was corrected and re-certified on exact READY Preview `dpl_F4B1LaWbuTKPvB3f7bZ4edRHKzb3` at commit `7e6c6084596767dd0e062c5f82f62036af361899`. Explicit foreign billing currencies now require a complete active three-plan catalogue; invalid, unsupported, missing, or partial foreign catalogues fail closed with a safe HTTP 409 before snapshot persistence, company mutation, or provider code. Missing legacy currency and explicit NGN retain the certified NGN path. Focused automated coverage passed 49/49 across the new currency matrix and affected Cloud suites, followed by clean TypeScript and ESLint runs.
+
+The staging-only runtime retest passed 16/16 against `vgrcfuaqxwidgdgtnved`. An explicit-USD synthetic tenant received safe 409 responses from both price and checkout APIs while USD was unconfigured, including when malicious client amount, currency, provider-plan, and price-version fields were supplied. Subscription count and company billing state remained unchanged. A complete synthetic USD catalogue then returned exact USD 19/59/149 amounts, version, and trusted provider mappings through the price-resolution path only; checkout was deliberately not called for those fake provider IDs. The harness reported provider calls `0`, Vercel contained no Flutterwave logs or runtime errors, and every attributable row and Auth user was removed with zero residuals. Production was not accessed or changed.
+
 ## Initial supported billing currency architecture
 
 The application may recognize `NGN`, `USD`, `GBP`, `EUR`, `GHS`, `KES`, and `ZAR`, but checkout is enabled only for an active, explicitly configured catalogue row whose provider plan ID has been manually created and verified. Operational currency remains independent and may be any valid ISO-4217 code supported by the tenant's rate cards.
