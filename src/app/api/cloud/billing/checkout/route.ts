@@ -4,6 +4,7 @@ import type { CloudBillingPlan } from "@/lib/cloud-plans";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { createCloudSubscriptionCheckout } from "@/server/cloud-billing";
+import { CloudBillingCurrencyUnavailableError } from "@/server/cloud-plan-prices";
 import { logPaymentError } from "@/server/monitoring";
 import { requireCompanyRole } from "@/server/tenancy";
 
@@ -61,6 +62,9 @@ export async function POST(request: Request) {
       company: checkout.company
     });
   } catch (error) {
+    if (error instanceof CloudBillingCurrencyUnavailableError) {
+      return NextResponse.json({ error: error.publicMessage, code: error.code }, { status: 409 });
+    }
     logPaymentError(error, "Unable to create Fly Logistics Cloud subscription checkout.", {
       companyId: access.tenant.companyId,
       plan: parsed.data.plan

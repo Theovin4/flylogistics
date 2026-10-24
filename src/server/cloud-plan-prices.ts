@@ -5,7 +5,7 @@ import {
   type CloudBillingPlan,
   type CloudPlanPrice
 } from "@/lib/cloud-plans";
-import { normalizeCurrencyCode, supportedCloudBillingCurrencies, type CloudBillingCurrency } from "@/lib/tenant-locale";
+import { isValidCurrencyCode, supportedCloudBillingCurrencies, type CloudBillingCurrency } from "@/lib/tenant-locale";
 import type { getSupabaseAdmin } from "@/lib/supabase-server";
 
 type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
@@ -26,6 +26,24 @@ type PriceRow = {
 function tableMissing(error: { code?: string; message?: string } | null | undefined) {
   const message = error?.message?.toLowerCase() ?? "";
   return ["42P01", "42703", "PGRST204"].includes(error?.code ?? "") || message.includes("could not find");
+}
+
+export class CloudBillingCurrencyUnavailableError extends Error {
+  readonly code = "CLOUD_BILLING_CURRENCY_UNAVAILABLE";
+  readonly currency: string | null;
+  readonly publicMessage: string;
+
+  constructor(currency: string | null, reason: "invalid" | "unavailable" = "unavailable") {
+    const safeCurrency = currency && /^[A-Z]{3}$/.test(currency) ? currency : null;
+    super(reason === "invalid"
+      ? "Subscription billing currency is invalid."
+      : `Subscription billing is not configured for ${safeCurrency ?? "this currency"}.`);
+    this.name = "CloudBillingCurrencyUnavailableError";
+    this.currency = safeCurrency;
+    this.publicMessage = reason === "invalid"
+      ? "The subscription billing currency is invalid. Choose an available billing currency or contact support."
+      : `${safeCurrency ?? "This"} subscription billing is not available yet. Choose an available billing currency or contact support.`;
+  }
 }
 
 export function legacyNgnCloudPrice(plan: CloudBillingPlan): CloudPlanPrice {
@@ -82,15 +100,32 @@ export async function resolveCloudPlanPrice(
   supabase: SupabaseAdminClient,
   input: { plan: CloudBillingPlan; requestedCurrency?: string | null }
 ) {
-  const requestedCurrency = normalizeCurrencyCode(input.requestedCurrency, "NGN");
-  const requested = await activePrice(supabase, input.plan, requestedCurrency);
-  if (requested?.configured) return { price: requested, requestedCurrency, fallback: false };
+  const rawCurrency = String(input.requestedCurrency ?? "").trim().toUpperCase();
+  const requestedCurrency = rawCurrency || "NGN";
+  if (rawCurrency && !isValidCurrencyCode(rawCurrency)) {
+    throw new CloudBillingCurrencyUnavailableError(null, "invalid");
+  }
+  if (rawCurrency && !supportedCloudBillingCurrencies.includes(rawCurrency as CloudBillingCurrency)) {
+    throw new CloudBillingCurrencyUnavailableError(requestedCurrency);
+  }
 
-  const fallbackRow = requestedCurrency === "NGN" ? null : await activePrice(supabase, input.plan, "NGN");
-  if (fallbackRow?.configured) return { price: fallbackRow, requestedCurrency, fallback: true };
+  if (requestedCurrency === "NGN") {
+    const configuredNgn = await activePrice(supabase, input.plan, "NGN");
+    return {
+      price: configuredNgn?.configured ? configuredNgn : legacyNgnCloudPrice(input.plan),
+      requestedCurrency,
+      fallback: false
+    };
+  }
 
-  const legacy = legacyNgnCloudPrice(input.plan);
-  return { price: legacy, requestedCurrency, fallback: requestedCurrency !== "NGN" };
+  const plans = Object.keys(cloudPlanDefinitions) as CloudBillingPlan[];
+  const completeCatalogue = await Promise.all(plans.map((plan) => activePrice(supabase, plan, requestedCurrency)));
+  if (!completeCatalogue.every((price) => price?.configured)) {
+    throw new CloudBillingCurrencyUnavailableError(requestedCurrency);
+  }
+  const requested = completeCatalogue[plans.indexOf(input.plan)];
+  if (!requested) throw new CloudBillingCurrencyUnavailableError(requestedCurrency);
+  return { price: requested, requestedCurrency, fallback: false };
 }
 
 export async function listPublicCloudPlanPrices(supabase: SupabaseAdminClient | null) {

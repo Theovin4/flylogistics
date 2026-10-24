@@ -118,6 +118,7 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
   const [cancellingBilling, setCancellingBilling] = useState(false);
   const [verifiedBillingRef, setVerifiedBillingRef] = useState<string | null>(null);
   const [billingPrices, setBillingPrices] = useState<CloudPriceView[]>([]);
+  const [billingPriceError, setBillingPriceError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState({
@@ -168,8 +169,9 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
         accentColor: data.company?.accent_color ?? ""
       });
       const pricesResponse = await fetch("/api/cloud/billing/prices", { cache: "no-store" });
-      const pricesData = await pricesResponse.json() as { prices?: CloudPriceView[] };
-      if (pricesResponse.ok) setBillingPrices(pricesData.prices ?? []);
+      const pricesData = await pricesResponse.json() as { prices?: CloudPriceView[]; error?: string };
+      setBillingPrices(pricesResponse.ok ? pricesData.prices ?? [] : []);
+      setBillingPriceError(pricesResponse.ok ? null : pricesData.error ?? "Subscription billing prices are unavailable.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load cloud workspace.");
     } finally {
@@ -534,6 +536,11 @@ export function CloudDashboard({ section }: { section: CloudSection }) {
                 <BillingStat label="Operating currency" value={company?.currency ?? DEFAULT_TENANT_CURRENCY} />
                 <BillingStat label="Subscription billing currency" value={company?.billing_currency ?? DEFAULT_TENANT_CURRENCY} />
               </div>
+              {billingPriceError && (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
+                  {billingPriceError}
+                </div>
+              )}
               <div className="grid gap-4 md:grid-cols-3">
                 <BillingStat label="Team usage" value={`${overview?.usage?.members ?? 0} / ${currentPlan.maxUsers ?? "Unlimited"}`} />
                 <BillingStat label="Driver usage" value={`${overview?.usage?.drivers ?? 0} / ${currentPlan.maxDrivers ?? "Unlimited"}`} />
