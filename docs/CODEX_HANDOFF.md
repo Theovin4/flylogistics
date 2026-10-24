@@ -93,13 +93,24 @@ This section supersedes older globalization and staging-migration status above.
 - [x] Pass full local validation and an environment-free production build.
 - [x] Apply and verify the additive migration on staging only.
 - [ ] Commit and push the release candidate, excluding the pre-existing untracked runtime script.
-- [ ] Deploy only the branch to Preview and verify the exact matching deployment.
-- [ ] Run synthetic international tenant and billing runtime checks, then verify complete cleanup.
+- [x] Deploy only the branch to Preview and verify the exact matching deployment.
+- [ ] Run authenticated synthetic international tenant and billing runtime checks; public catalogue runtime and cleanup passed, but staging credentials were absent from the process.
 - [ ] Obtain Flutterwave dashboard confirmation for every enabled currency/plan mapping.
 
 ### Next recommended action
 
-Commit and push the validated branch, wait for its exact Vercel Preview to become READY, then run only staging-safe synthetic international tenant scenarios. Do not enable a non-NGN billing currency until all three approved Flutterwave recurring plan IDs for that currency are configured and independently verified.
+Provide the four authorized staging process variables to a clean verification process, then run authenticated UK/US/Kenya/South Africa/Europe tenant settings, rate-card, analytics, and billing-fallback scenarios against the exact Preview. Do not enable a non-NGN billing currency until all three approved Flutterwave recurring plan IDs for that currency are configured and independently verified.
+
+### Preview evidence
+
+- Commit `0cac878fb41ddeab596f449a2521ae4549483d43` was pushed to `origin/cloud-globalization`.
+- Exact Vercel Preview deployment `dpl_7trHongCTGJH8jEahirpJPYVMH49` became READY at `https://flylogistics-fhw3f46xi-vincent-theos-projects.vercel.app`.
+- Preview health returned HTTP 200.
+- A complete synthetic GBP catalogue (Starter 19, Growth 59, Scale 149; fake never-call provider IDs) was inserted into staging only. The Preview rendered £19/£59/£149 and exposed GBP only while all three active mappings existed.
+- An unsupported USD request did not render the synthetic GBP prices. After cleanup, GBP was no longer advertised and the configured NGN catalogue remained visible.
+- All three synthetic rows were deleted in a guaranteed cleanup path; direct staging verification returned zero residual rows for the test price version.
+- Deployment runtime logs reported no warning, error, or fatal entries during the checks.
+- `STAGING_SUPABASE_URL`, `STAGING_SUPABASE_ANON_KEY`, `STAGING_SUPABASE_SERVICE_ROLE_KEY`, and `STAGING_TEST_DATA_SECRET` were absent from the process. Their values were not read from `.env.local`, printed, or reconstructed, so authenticated tenant scenarios remain pending.
 
 **NOT READY FOR PRODUCTION DEPLOYMENT**
 

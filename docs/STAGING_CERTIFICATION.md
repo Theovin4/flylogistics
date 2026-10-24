@@ -84,7 +84,9 @@ This is an additive staging checkpoint for branch `cloud-globalization` at basel
 | Globalization migration | **PASS** | `20261021135732_cloud_globalization.sql` applied only to staging and registered as `20261023210455_cloud_globalization`. |
 | Service-only security | **PASS** | `cloud_plan_prices` and `cloud_fx_rates` have RLS enabled; `anon` and `authenticated` have no SELECT privilege; `service_role` has SELECT/DML privileges. Their no-policy advisor notices are intentional because browser roles must have no path to these tables. |
 | Schema preservation | **PASS** | `companies.locale` exists. All five subscription snapshot fields exist. Both new tables contain zero rows; no fabricated billing catalogue or FX data was seeded. |
-| Runtime Preview | **PENDING** | The branch has not yet been pushed or deployed to Preview. No runtime claim is made for this new globalization code. |
+| Runtime Preview | **PARTIAL PASS** | Exact deployment `dpl_7trHongCTGJH8jEahirpJPYVMH49` for commit `0cac878fb41ddeab596f449a2521ae4549483d43` became READY. Health returned 200. A complete synthetic GBP catalogue rendered £19/£59/£149; unsupported USD did not render those GBP prices; after deletion GBP was no longer advertised and NGN remained. Runtime logs had no warning/error/fatal entries. |
+| Synthetic cleanup | **PASS** | All three GBP catalogue rows were deleted in a guaranteed cleanup path. Direct staging query returned zero rows for price version `codex-global-preview-20261024`. No checkout or provider call occurred. |
+| Authenticated international tenants | **BLOCKED** | The four approved staging process variables were absent. Production-targeted `.env.local` was not read. Authenticated tenant settings, rate-card, analytics, billing-fallback, and isolation flows therefore remain uncertified on this Preview. |
 
 ### External evidence retained
 
@@ -93,7 +95,7 @@ This is an additive staging checkpoint for branch `cloud-globalization` at basel
 
 ### Current decision
 
-The code and staging schema gates pass. A matching Preview and synthetic international tenant runtime matrix are still required before a production decision.
+The code, staging schema, exact Preview, public catalogue, unsupported-currency display, and fixture-cleanup gates pass. Authenticated international tenant runtime scenarios and manual provider confirmation are still required before a production decision.
 
 **NOT READY FOR PRODUCTION DEPLOYMENT**
 
