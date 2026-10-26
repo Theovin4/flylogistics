@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { cloudBillingSnapshotMatchesTransaction } from "../src/lib/cloud-billing-security";
 import {
   defaultLocaleForCountry,
+  formatCloudBillingMoney,
   formatMoney,
   formatTenantDateTime,
   formatTenantTime,
@@ -62,6 +63,16 @@ test("money formatting uses each record currency instead of a tenant-wide NGN as
   assert.match(formatMoney(1250, "KES", "en-KE"), /Ksh|KES/);
   assert.match(formatMoney(1250, "ZAR", "en-ZA"), /R|ZAR/);
   assert.notEqual(formatMoney(1250, "EUR", "fr-FR"), formatMoney(1250, "NGN", "en-NG"));
+});
+
+test("public Cloud billing prices use the approved international currency symbols", () => {
+  assert.equal(formatCloudBillingMoney(25000, "NGN"), "₦25,000.00");
+  assert.equal(formatCloudBillingMoney(37, "USD"), "$37.00");
+  assert.equal(formatCloudBillingMoney(27.5, "GBP"), "£27.50");
+  assert.equal(formatCloudBillingMoney(83.5, "EUR"), "€83.50");
+  assert.equal(formatCloudBillingMoney(429, "GHS"), "GH₵429.00");
+  assert.equal(formatCloudBillingMoney(4800, "KES"), "KSh4,800.00");
+  assert.equal(formatCloudBillingMoney(610, "ZAR"), "R610.00");
 });
 
 test("foreign-currency payment verification is bound to the persisted price snapshot", () => {

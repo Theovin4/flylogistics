@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cloudPlanDefinitions, cloudLimitLabel, type CloudBillingPlan } from "@/lib/cloud-plans";
-import { formatMoney } from "@/lib/tenant-locale";
+import { formatCloudBillingMoney } from "@/lib/tenant-locale";
 import { createMetadata } from "@/lib/seo";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { listPublicCloudPlanPrices } from "@/server/cloud-plan-prices";
@@ -52,7 +52,7 @@ export default async function CloudPricingPage({ searchParams }: { searchParams:
                     <CardTitle>{plan.name}</CardTitle>
                     {key === "growth" && <Badge className="bg-primary text-primary-foreground">Most Popular</Badge>}
                   </div>
-                  <div className="mt-4 text-4xl font-black">{price ? formatMoney(price.amount, price.currency) : "Contact sales"}</div>
+                  <div className="mt-4 text-4xl font-black">{price ? formatCloudBillingMoney(price.amount, price.currency as (typeof catalog.currencies)[number]) : "Contact sales"}</div>
                   <p className="text-sm text-muted-foreground">{price ? `Billed as ${price.currency} per month after the 14-day free trial` : "Billing plan configuration required"}</p>
                 </CardHeader>
                 <CardContent>

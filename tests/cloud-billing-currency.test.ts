@@ -20,15 +20,30 @@ type PriceRow = {
   effective_from: string;
 };
 
-function price(plan: PriceRow["plan"], currency: string, amount: number): PriceRow {
+const approvedForeignCatalogue = [
+  ["starter", "USD", 37, "172703"], ["growth", "USD", 94, "172704"], ["scale", "USD", 331, "172705"],
+  ["starter", "GBP", 27.5, "172706"], ["growth", "GBP", 70, "172707"], ["scale", "GBP", 247, "172708"],
+  ["starter", "EUR", 33, "172709"], ["growth", "EUR", 83.5, "172710"], ["scale", "EUR", 295, "172711"],
+  ["starter", "GHS", 429, "172712"], ["growth", "GHS", 1090, "172713"], ["scale", "GHS", 3845, "172714"],
+  ["starter", "KES", 4800, "172715"], ["growth", "KES", 12200, "172716"], ["scale", "KES", 43000, "172717"],
+  ["starter", "ZAR", 610, "172718"], ["growth", "ZAR", 1550, "172719"], ["scale", "ZAR", 5460, "172720"]
+] as const;
+
+function price(
+  plan: PriceRow["plan"],
+  currency: string,
+  amount: number,
+  providerPlanId = "test-" + currency.toLowerCase() + "-" + plan,
+  priceVersion = "test-" + currency.toLowerCase() + "-v1"
+): PriceRow {
   return {
     id: currency + "-" + plan,
     plan,
     currency,
     amount,
     provider: "flutterwave",
-    provider_plan_id: "test-" + currency.toLowerCase() + "-" + plan,
-    price_version: "test-" + currency.toLowerCase() + "-v1",
+    provider_plan_id: providerPlanId,
+    price_version: priceVersion,
     billing_interval: "monthly",
     active: true,
     effective_from: "2026-01-01T00:00:00.000Z"
@@ -135,6 +150,35 @@ test("a complete foreign catalogue selects the trusted foreign price and provide
   assert.equal(resolved.price.priceVersion, "test-usd-v1");
   assert.equal(resolved.price.providerPlanId, "test-usd-growth");
   assert.equal(resolved.fallback, false);
+});
+
+test("all 18 approved foreign plan mappings resolve exact trusted facts without fallback", async () => {
+  const rows = approvedForeignCatalogue.map(([plan, currency, amount, providerPlanId]) =>
+    price(plan, currency, amount, providerPlanId, "2026-global-v1")
+  );
+  assert.equal(new Set(approvedForeignCatalogue.map((entry) => entry[3])).size, 18);
+
+  for (const [plan, currency, amount, providerPlanId] of approvedForeignCatalogue) {
+    const resolved = await resolveCloudPlanPrice(priceClient(rows), { plan, requestedCurrency: currency });
+    assert.equal(resolved.price.amount, amount);
+    assert.equal(resolved.price.currency, currency);
+    assert.equal(resolved.price.priceVersion, "2026-global-v1");
+    assert.equal(resolved.price.provider, "flutterwave");
+    assert.equal(resolved.price.providerPlanId, providerPlanId);
+    assert.equal(resolved.price.billingInterval, "monthly");
+    assert.equal(resolved.price.configured, true);
+    assert.equal(resolved.fallback, false);
+  }
+});
+
+test("catalogue migration seeds the immutable 18-row matrix inactive and idempotently", () => {
+  const migration = readFileSync(join(process.cwd(), "supabase/migrations/20261025_cloud_global_billing_catalogue.sql"), "utf8");
+  for (const [plan, currency, amount, providerPlanId] of approvedForeignCatalogue) {
+    const escapedAmount = String(amount).replace(".", "\\.");
+    assert.match(migration, new RegExp(`\\('${plan}',\\s*'${currency}',\\s*${escapedAmount}(?:0)?,\\s*'flutterwave',\\s*'${providerPlanId}',\\s*'2026-global-v1',\\s*'monthly',\\s*false\\)`));
+  }
+  assert.match(migration, /on conflict \(plan, currency, price_version\) do update/);
+  assert.match(migration, /active = false/);
 });
 
 test("a partial foreign catalogue cannot prepare checkout", async () => {

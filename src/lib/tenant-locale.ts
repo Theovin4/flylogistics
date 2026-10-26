@@ -121,6 +121,37 @@ export function formatMoney(
   }).format(safeAmount);
 }
 
+const cloudBillingDisplayLocales: Record<CloudBillingCurrency, string> = {
+  NGN: "en-NG",
+  USD: "en-US",
+  GBP: "en-GB",
+  EUR: "en-IE",
+  GHS: "en-GH",
+  KES: "en-KE",
+  ZAR: "en-NG"
+};
+
+export function formatCloudBillingMoney(
+  amount: number | string | null | undefined,
+  currency: CloudBillingCurrency
+) {
+  const approvedSymbols: Partial<Record<CloudBillingCurrency, string>> = {
+    GHS: "GH₵",
+    KES: "KSh",
+    ZAR: "R"
+  };
+  const symbol = approvedSymbols[currency];
+  if (symbol) {
+    const numeric = Number(amount ?? 0);
+    const safeAmount = Number.isFinite(numeric) ? numeric : 0;
+    return symbol + new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(safeAmount);
+  }
+  return formatMoney(amount, currency, cloudBillingDisplayLocales[currency]);
+}
+
 export function formatTenantDate(
   value: string | number | Date | null | undefined,
   timezone?: string | null,
