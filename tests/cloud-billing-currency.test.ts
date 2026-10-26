@@ -126,13 +126,19 @@ test("invalid and unsupported explicit billing currencies are rejected, not norm
 
 test("missing legacy currency and explicit NGN retain certified NGN compatibility", async () => {
   await withNgnPlanEnvironment(async () => {
-    for (const requestedCurrency of [null, "", "NGN"]) {
-      const resolved = await resolveCloudPlanPrice(priceClient([]), { plan: "growth", requestedCurrency });
-      assert.equal(resolved.requestedCurrency, "NGN");
-      assert.equal(resolved.price.currency, "NGN");
-      assert.equal(resolved.price.amount, 75000);
-      assert.equal(resolved.price.configured, true);
-      assert.equal(resolved.fallback, false);
+    const expected = { starter: 25000, growth: 75000, scale: 200000 } as const;
+    for (const [plan, amount] of Object.entries(expected)) {
+      for (const requestedCurrency of [null, "", "NGN"]) {
+        const resolved = await resolveCloudPlanPrice(priceClient([]), {
+          plan: plan as keyof typeof expected,
+          requestedCurrency
+        });
+        assert.equal(resolved.requestedCurrency, "NGN");
+        assert.equal(resolved.price.currency, "NGN");
+        assert.equal(resolved.price.amount, amount);
+        assert.equal(resolved.price.configured, true);
+        assert.equal(resolved.fallback, false);
+      }
     }
   });
 });

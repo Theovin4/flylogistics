@@ -1,5 +1,64 @@
 # FLY LOGISTICS FINAL RELEASE-CANDIDATE STAGING CERTIFICATION
 
+## Authoritative global billing catalogue certification — 2026-10-26 (Africa/Lagos)
+
+This section supersedes the unconfigured-catalogue status in the earlier globalization checkpoint below. It is limited to the approved international billing catalogue and directly affected billing/security validation; unrelated carrier, mobile, shipment, and notification matrices were not rerun.
+
+### Locked target and safety
+
+- Branch: `cloud-globalization`
+- Application commit: `7df41babb16b243cabd5425f591f4e038266e779`
+- Preview deployment: `dpl_3jts1qew5c5djqPxuZBL8qH3zprU`
+- Preview URL: `https://flylogistics-d8k2p2myd-vincent-theos-projects.vercel.app`
+- Vercel reported `READY`, `target=null` (Preview), and the exact branch/commit.
+- Only Supabase staging project `vgrcfuaqxwidgdgtnved` was migrated and mutated. Production project `igloqgojviveysjazhmu`, production deployments, `main`, real payments, providers, carriers, and notification recipients were untouched.
+
+### Approved catalogue and activation
+
+The owner-supplied catalogue is `price_version='2026-global-v1'`, `provider='flutterwave'`, and `billing_interval='monthly'`:
+
+| Currency | Starter | Growth | Scale |
+| --- | --- | --- | --- |
+| USD | 37 / `172703` | 94 / `172704` | 331 / `172705` |
+| GBP | 27.50 / `172706` | 70 / `172707` | 247 / `172708` |
+| EUR | 33 / `172709` | 83.50 / `172710` | 295 / `172711` |
+| GHS | 429 / `172712` | 1,090 / `172713` | 3,845 / `172714` |
+| KES | 4,800 / `172715` | 12,200 / `172716` | 43,000 / `172717` |
+| ZAR | 610 / `172718` | 1,550 / `172719` | 5,460 / `172720` |
+
+Migration `supabase/migrations/20261025_cloud_global_billing_catalogue.sql` was registered on staging as `20261025210813_cloud_global_billing_catalogue`. Its idempotent seed produced exactly 18 rows with 0 active. Programmatic comparison found zero field mismatches, duplicate provider IDs, duplicate plan/currency/version keys, or NGN rows. All 18 were then activated in one guarded transaction. Final state is 18/18 active and 3/3 active for USD, GBP, EUR, GHS, KES, and ZAR.
+
+The 18 provider plan IDs were supplied by the owner and were not independently verified in the Flutterwave dashboard. Production activation therefore remains a separate manual approval gate.
+
+### Verification results
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Public pricing | **PASS** | Preview advertised NGN, USD, GBP, EUR, GHS, KES, and ZAR. Exact displays passed for all 21 tier/currency values. An actual symbol-rendering defect was corrected so GHS uses `GH₵` and KES uses `KSh`; ZAR uses `R`. |
+| Server resolver | **PASS — 18/18** | Every foreign plan/currency combination resolved the exact amount, currency, `2026-global-v1`, Flutterwave provider plan ID, and monthly interval with `fallback=false`. |
+| NGN regression | **PASS** | Starter/Growth/Scale resolved NGN 25,000 / 75,000 / 200,000 through the existing certified legacy environment configuration. No NGN catalogue row or provider-plan change was introduced. |
+| Checkout authority | **PASS** | Resolver coverage exercised all three plans; the guarded Preview check confirmed the authenticated tenant received trusted server facts. Malicious client amount/currency/provider-plan input remained non-authoritative. No configured checkout or Flutterwave request was made. |
+| Complete-catalogue safety | **PASS** | USD Scale was temporarily deactivated once. USD disappeared from rendered selector anchors, the price API and checkout returned safe 409 responses, and subscription/company state was unchanged. After restoration, USD returned through the page and API only at 3/3 active. |
+| Runtime harness | **PASS — 21/21** | Health, exact database matrix, direct anonymous denial, seven pricing pages, authenticated pricing, fail-closed behavior, zero side effects, restoration, and cleanup all passed. Provider calls: 0. Production mutations: 0. |
+| Database security | **PASS** | `cloud_plan_prices` has RLS enabled. `anon` and `authenticated` have no table grants; only `service_role` has the required privileges. Direct anonymous access failed. The intentional service-only RLS-without-policy INFO notice remains. |
+| Cleanup | **PASS** | Zero synthetic companies, profiles, memberships, subscriptions, and Auth users remained. Final catalogue state was rechecked at 18/18 active with zero mismatches. |
+
+### Validation
+
+- Directly affected resolver/globalization/entitlement suites: 27/27 passed.
+- Checkout/security regression suite: 25/25 passed.
+- Total directly affected automated checks: 52/52 passed.
+- TypeScript: passed.
+- ESLint: passed, including the staging certification harness.
+- Preview error/fatal runtime-log query for the most recent 30 minutes returned no matching entries. The separate grouped runtime-error endpoint did not return a usable response; the route assertions and filtered deployment logs were used as the runtime evidence.
+- Current security advisor findings introduced no new catalogue exposure. The service-only no-policy notice is intentional; the pre-existing authenticated `SECURITY DEFINER` and leaked-password-protection warnings remain tracked outside this catalogue change.
+
+### Decision
+
+The approved international catalogue is configured, active, and certified on staging. Production remains untouched. Follow the pending eight-step production rollout in `docs/CLOUD_GLOBAL_BILLING_CONFIGURATION.md`, including independent Flutterwave dashboard verification, before any production activation.
+
+**GLOBAL BILLING CATALOGUE STAGING READY — PRODUCTION NOT DEPLOYED**
+
 ## Authoritative final staging gate — 2026-10-20 (Africa/Lagos)
 
 This section supersedes the earlier Preview-retest blockers and final-gate decisions later in this historical document. It covers only the three previously outstanding runtime checks; previously passed certification matrices were not rerun.
