@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
 import { requireCloudFeature, requireCompanyRole } from "@/server/tenancy";
+import { DEFAULT_TENANT_COUNTRY, normalizeCountryCode } from "@/lib/tenant-locale";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ const customerSchema = z.object({
   addressLine: z.string().trim().min(6).max(300),
   city: z.string().trim().min(2).max(100),
   state: z.string().trim().min(2).max(100),
-  country: z.string().trim().min(2).max(100).default("Nigeria"),
+  country: z.string().trim().min(2).max(100).optional(),
   notes: z.string().trim().max(1500).optional().or(z.literal(""))
 });
 
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
     address_line: parsed.data.addressLine,
     city: parsed.data.city,
     state: parsed.data.state,
-    country: parsed.data.country,
+    country: normalizeCountryCode(parsed.data.country ?? access.tenant.company?.country) ?? DEFAULT_TENANT_COUNTRY,
     notes: parsed.data.notes || null,
     status: "active"
   }).select("*").single();

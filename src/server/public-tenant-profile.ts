@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { publicTenantProfile, type PublicTenantProfile, type TenantBrandProfile } from "@/lib/tenant-branding";
 import { logWarn } from "@/server/monitoring";
 
-const PUBLIC_TENANT_SELECT = "id,name,slug,logo_url,brand_color,public_address,public_phone,public_whatsapp,public_support_email,show_contact_on_tracking,status,plan,subscription_status,trial_ends_at,subscription_renews_at";
+const PUBLIC_TENANT_SELECT = "id,name,slug,logo_url,brand_color,public_address,public_phone,public_whatsapp,public_support_email,show_contact_on_tracking,country,timezone,currency,locale,status,plan,subscription_status,trial_ends_at,subscription_renews_at";
 
 async function profileForResult(supabase: SupabaseClient, company: Record<string, unknown> | null, companyId: string | null) {
   if (!company || !companyId) return { profile: null as PublicTenantProfile | null, error: null };

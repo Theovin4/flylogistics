@@ -1,5 +1,64 @@
 # FLY LOGISTICS FINAL RELEASE-CANDIDATE STAGING CERTIFICATION
 
+## Authoritative global billing catalogue certification — 2026-10-26 (Africa/Lagos)
+
+This section supersedes the unconfigured-catalogue status in the earlier globalization checkpoint below. It is limited to the approved international billing catalogue and directly affected billing/security validation; unrelated carrier, mobile, shipment, and notification matrices were not rerun.
+
+### Locked target and safety
+
+- Branch: `cloud-globalization`
+- Application commit: `7df41babb16b243cabd5425f591f4e038266e779`
+- Preview deployment: `dpl_3jts1qew5c5djqPxuZBL8qH3zprU`
+- Preview URL: `https://flylogistics-d8k2p2myd-vincent-theos-projects.vercel.app`
+- Vercel reported `READY`, `target=null` (Preview), and the exact branch/commit.
+- Only Supabase staging project `vgrcfuaqxwidgdgtnved` was migrated and mutated. Production project `igloqgojviveysjazhmu`, production deployments, `main`, real payments, providers, carriers, and notification recipients were untouched.
+
+### Approved catalogue and activation
+
+The owner-supplied catalogue is `price_version='2026-global-v1'`, `provider='flutterwave'`, and `billing_interval='monthly'`:
+
+| Currency | Starter | Growth | Scale |
+| --- | --- | --- | --- |
+| USD | 37 / `172703` | 94 / `172704` | 331 / `172705` |
+| GBP | 27.50 / `172706` | 70 / `172707` | 247 / `172708` |
+| EUR | 33 / `172709` | 83.50 / `172710` | 295 / `172711` |
+| GHS | 429 / `172712` | 1,090 / `172713` | 3,845 / `172714` |
+| KES | 4,800 / `172715` | 12,200 / `172716` | 43,000 / `172717` |
+| ZAR | 610 / `172718` | 1,550 / `172719` | 5,460 / `172720` |
+
+Migration `supabase/migrations/20261025_cloud_global_billing_catalogue.sql` was registered on staging as `20261025210813_cloud_global_billing_catalogue`. Its idempotent seed produced exactly 18 rows with 0 active. Programmatic comparison found zero field mismatches, duplicate provider IDs, duplicate plan/currency/version keys, or NGN rows. All 18 were then activated in one guarded transaction. Final state is 18/18 active and 3/3 active for USD, GBP, EUR, GHS, KES, and ZAR.
+
+The 18 provider plan IDs were supplied by the owner and were not independently verified in the Flutterwave dashboard. Production activation therefore remains a separate manual approval gate.
+
+### Verification results
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Public pricing | **PASS** | Preview advertised NGN, USD, GBP, EUR, GHS, KES, and ZAR. Exact displays passed for all 21 tier/currency values. An actual symbol-rendering defect was corrected so GHS uses `GH₵` and KES uses `KSh`; ZAR uses `R`. |
+| Server resolver | **PASS — 18/18** | Every foreign plan/currency combination resolved the exact amount, currency, `2026-global-v1`, Flutterwave provider plan ID, and monthly interval with `fallback=false`. |
+| NGN regression | **PASS** | Starter/Growth/Scale resolved NGN 25,000 / 75,000 / 200,000 through the existing certified legacy environment configuration. No NGN catalogue row or provider-plan change was introduced. |
+| Checkout authority | **PASS** | Resolver coverage exercised all three plans; the guarded Preview check confirmed the authenticated tenant received trusted server facts. Malicious client amount/currency/provider-plan input remained non-authoritative. No configured checkout or Flutterwave request was made. |
+| Complete-catalogue safety | **PASS** | USD Scale was temporarily deactivated once. USD disappeared from rendered selector anchors, the price API and checkout returned safe 409 responses, and subscription/company state was unchanged. After restoration, USD returned through the page and API only at 3/3 active. |
+| Runtime harness | **PASS — 21/21** | Health, exact database matrix, direct anonymous denial, seven pricing pages, authenticated pricing, fail-closed behavior, zero side effects, restoration, and cleanup all passed. Provider calls: 0. Production mutations: 0. |
+| Database security | **PASS** | `cloud_plan_prices` has RLS enabled. `anon` and `authenticated` have no table grants; only `service_role` has the required privileges. Direct anonymous access failed. The intentional service-only RLS-without-policy INFO notice remains. |
+| Cleanup | **PASS** | Zero synthetic companies, profiles, memberships, subscriptions, and Auth users remained. Final catalogue state was rechecked at 18/18 active with zero mismatches. |
+
+### Validation
+
+- Directly affected resolver/globalization/entitlement suites: 27/27 passed.
+- Checkout/security regression suite: 25/25 passed.
+- Total directly affected automated checks: 52/52 passed.
+- TypeScript: passed.
+- ESLint: passed, including the staging certification harness.
+- Preview error/fatal runtime-log query for the most recent 30 minutes returned no matching entries. The separate grouped runtime-error endpoint did not return a usable response; the route assertions and filtered deployment logs were used as the runtime evidence.
+- Current security advisor findings introduced no new catalogue exposure. The service-only no-policy notice is intentional; the pre-existing authenticated `SECURITY DEFINER` and leaked-password-protection warnings remain tracked outside this catalogue change.
+
+### Decision
+
+The approved international catalogue is configured, active, and certified on staging. Production remains untouched. Follow the pending eight-step production rollout in `docs/CLOUD_GLOBAL_BILLING_CONFIGURATION.md`, including independent Flutterwave dashboard verification, before any production activation.
+
+**GLOBAL BILLING CATALOGUE STAGING READY — PRODUCTION NOT DEPLOYED**
+
 ## Authoritative final staging gate — 2026-10-20 (Africa/Lagos)
 
 This section supersedes the earlier Preview-retest blockers and final-gate decisions later in this historical document. It covers only the three previously outstanding runtime checks; previously passed certification matrices were not rerun.
@@ -71,6 +130,35 @@ Only staging project `vgrcfuaqxwidgdgtnved` was changed. Production project `igl
 - No push, merge, Preview deployment, or production deployment occurred in this checkpoint.
 
 **NOT READY FOR PRODUCTION DEPLOYMENT**
+
+## Cloud globalization staging evidence — 2026-10-23 (Africa/Lagos)
+
+This is an additive staging checkpoint for branch `cloud-globalization` at baseline `a6773f933e7655c91a44c68be38583429b38d6e4`. Production was not changed or deployed.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Local validation | **PASS** | TypeScript, ESLint, client-secret scan, and 67/67 tests passed. Tests cover country/locale defaults, IANA timezone and DST behavior, record-currency formatting, foreign-currency snapshot matching, server-resolved checkout, catalogue changes between checkout and verification, webhook replay ordering, and service-only schema posture. |
+| Production build | **PASS** | Environment-free isolated build contained zero `.env*` files, compiled successfully, and generated 158/158 static pages. The temporary build copy was removed afterward. |
+| Staging identity | **PASS** | Exact project `vgrcfuaqxwidgdgtnved`, named Fly Logistics Staging, was ACTIVE_HEALTHY. Production ref `igloqgojviveysjazhmu` was not mutated. |
+| Globalization migration | **PASS** | `20261021135732_cloud_globalization.sql` applied only to staging and registered as `20261023210455_cloud_globalization`. |
+| Service-only security | **PASS** | `cloud_plan_prices` and `cloud_fx_rates` have RLS enabled; `anon` and `authenticated` have no SELECT privilege; `service_role` has SELECT/DML privileges. Their no-policy advisor notices are intentional because browser roles must have no path to these tables. |
+| Schema preservation | **PASS** | `companies.locale` exists. All five subscription snapshot fields exist. Both new tables contain zero rows; no fabricated billing catalogue or FX data was seeded. |
+| Runtime Preview | **PARTIAL PASS** | Exact deployment `dpl_7trHongCTGJH8jEahirpJPYVMH49` for commit `0cac878fb41ddeab596f449a2521ae4549483d43` became READY. Health returned 200. A complete synthetic GBP catalogue rendered £19/£59/£149; unsupported USD did not render those GBP prices; after deletion GBP was no longer advertised and NGN remained. Runtime logs had no warning/error/fatal entries. |
+| Synthetic cleanup | **PASS** | All three GBP catalogue rows were deleted in a guaranteed cleanup path. Direct staging query returned zero rows for price version `codex-global-preview-20261024`. No checkout or provider call occurred. |
+| Authenticated international tenants | **PASS** | On 2026-10-24, the four approved staging variables were present in the process and the URL matched `vgrcfuaqxwidgdgtnved`. Six Preview signups (NG, GB, US, KE, ZA, FR) persisted and reloaded the requested country, locale, IANA timezone, and operating currency: localization 12/12, timezone/DST 16/16 after accepting Supabase's equivalent `+00:00` UTC serialization, operating currencies 14/14, grouped analytics 3/3, billing separation 13/13, and focused isolation 8/8. Database timezone was `UTC` with offset zero and the audited date columns were `timestamptz`. |
+| Unsupported billing checkout | **PASS** | Fix commit `7e6c6084596767dd0e062c5f82f62036af361899` was deployed only to exact READY Preview `dpl_F4B1LaWbuTKPvB3f7bZ4edRHKzb3` (`target=null`, no alias error). A guarded staging run passed 16/16: unconfigured explicit USD returned safe 409 responses from price and checkout APIs, malicious client pricing/provider facts were ignored, and subscription count plus company billing state stayed unchanged. A complete temporary USD catalogue then resolved exact USD 19/59/149 facts and trusted fake mappings through GET only; no configured-catalogue checkout was attempted. Provider calls were zero, Vercel had no Flutterwave or error/fatal runtime logs, and all six cleanup categories were zero. |
+| Authenticated synthetic cleanup | **PASS** | The six Auth users and all attributable companies, memberships, profiles, rate cards, subscriptions, shipments, operational events, catalogue fixtures, and FX fixtures were removed. Post-cleanup residual counts were zero in every category. No payment, carrier booking, SMS, WhatsApp, or customer email was triggered. |
+
+### External evidence retained
+
+- Flutterwave — MANUAL DASHBOARD CONFIRMATION REQUIRED
+- FEZ/Sendbox — APP-SIDE PASS — EXTERNAL SANDBOX LIFECYCLE MANUAL
+
+### Current decision
+
+The code, staging schema, exact Preview, public catalogue, authenticated international tenant localization, multi-currency analytics, tenant isolation, strict subscription-currency rejection, and cleanup gates pass. Cloud globalization is Preview-ready. Manual provider confirmation remains required before enabling a real foreign billing catalogue, and no production deployment or provider configuration was performed.
+
+**CLOUD GLOBALIZATION PREVIEW READY — PRODUCTION NOT DEPLOYED**
 
 ## Scope and safety
 

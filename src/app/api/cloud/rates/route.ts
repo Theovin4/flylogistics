@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { enforceRateLimit, parseJson } from "@/server/api";
 import { writeAuditLog } from "@/server/audit";
 import { requireCloudFeature } from "@/server/tenancy";
+import { DEFAULT_TENANT_CURRENCY, isValidCurrencyCode, normalizeCurrencyCode } from "@/lib/tenant-locale";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ const rateSchema = z.object({
   basePrice: z.coerce.number().min(0).max(1_000_000_000),
   includedWeightKg: z.coerce.number().positive().max(100_000),
   extraKgPrice: z.coerce.number().min(0).max(1_000_000_000),
-  currency: z.string().trim().length(3).default("NGN"),
+  currency: z.string().trim().length(3).optional(),
   etaMinHours: z.coerce.number().int().positive().max(10000).optional(),
   etaMaxHours: z.coerce.number().int().positive().max(10000).optional(),
   isActive: z.boolean().default(true)
@@ -25,6 +26,9 @@ const rateSchema = z.object({
   }
   if (data.isActive && data.basePrice === 0 && data.extraKgPrice === 0) {
     context.addIssue({ code: "custom", message: "An active rate cannot charge zero for both the base price and extra weight.", path: ["basePrice"] });
+  }
+  if (data.currency && !isValidCurrencyCode(data.currency)) {
+    context.addIssue({ code: "custom", message: "Currency must be a valid ISO 4217 code.", path: ["currency"] });
   }
 });
 
@@ -73,7 +77,7 @@ export async function POST(request: Request) {
     base_price: parsed.data.basePrice,
     included_weight_kg: parsed.data.includedWeightKg,
     extra_kg_price: parsed.data.extraKgPrice,
-    currency: (parsed.data.currency ?? "NGN").toUpperCase(),
+    currency: normalizeCurrencyCode(parsed.data.currency, normalizeCurrencyCode(access.tenant.company?.currency, DEFAULT_TENANT_CURRENCY)),
     eta_min_hours: parsed.data.etaMinHours ?? null,
     eta_max_hours: parsed.data.etaMaxHours ?? null,
     is_active: parsed.data.isActive

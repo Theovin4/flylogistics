@@ -1,4 +1,5 @@
 import { canonicalSiteUrl, siteConfig } from "@/lib/site";
+import { formatMoney, formatTenantDateTime } from "@/lib/tenant-locale";
 
 type PdfRow = {
   label: string;
@@ -28,6 +29,9 @@ export type BrandedPdfInput = {
   }>;
   totalAmount?: unknown;
   currency?: string | null;
+  locale?: string | null;
+  timezone?: string | null;
+  issuedAt?: string | number | Date | null;
   notes?: string[];
 };
 
@@ -57,13 +61,8 @@ function rgbFromHex(hex: string | null | undefined) {
   };
 }
 
-function money(value: unknown, currency = "NGN") {
-  const amount = Number(value ?? 0);
-  return new Intl.NumberFormat("en-NG", {
-    currency,
-    maximumFractionDigits: 0,
-    style: "currency"
-  }).format(Number.isFinite(amount) ? amount : 0);
+function money(value: unknown, currency = "NGN", locale = "en-NG") {
+  return formatMoney(Number(value ?? 0), currency, locale, { maximumFractionDigits: 0 });
 }
 
 class PdfPainter {
@@ -201,7 +200,7 @@ export function buildBrandedPdf(input: BrandedPdfInput) {
   painter.section("Document summary");
   const summaryY = painter.currentY();
   painter.keyValue("Issued to", input.issuedTo ?? "Fly Logistics customer", LEFT, 250);
-  painter.keyValue("Issued on", new Date().toLocaleString("en-NG"), LEFT + 270, 250);
+  painter.keyValue("Issued on", formatTenantDateTime(input.issuedAt ?? new Date(), input.timezone ?? "Africa/Lagos", input.locale ?? "en-NG"), LEFT + 270, 250);
   painter.setY(summaryY - 48);
   painter.keyValue("Support", `${siteConfig.contact.supportEmail} | ${siteConfig.contact.supportPhone}`, LEFT, 520);
   painter.setY(summaryY - 96);
@@ -229,7 +228,7 @@ export function buildBrandedPdf(input: BrandedPdfInput) {
       painter.text(`${index + 1}. ${item.description}`, LEFT, y, 10, "dark");
       painter.text(item.reference ?? "", LEFT, y - 15, 8, "muted");
       painter.text(item.quantity ? `Qty ${item.quantity}` : "", PAGE_WIDTH - 190, y, 8, "muted");
-      painter.text(item.amount != null ? money(item.amount, currency) : "", PAGE_WIDTH - 130, y, 10, "dark");
+      painter.text(item.amount != null ? money(item.amount, currency, input.locale ?? "en-NG") : "", PAGE_WIDTH - 130, y, 10, "dark");
       painter.line(LEFT, y - 25, PAGE_WIDTH - LEFT, y - 25, "muted");
       painter.setY(y - 40);
     });
@@ -238,7 +237,7 @@ export function buildBrandedPdf(input: BrandedPdfInput) {
   painter.section("Totals");
   painter.rect(LEFT, painter.currentY() - 36, PAGE_WIDTH - LEFT * 2, 52, "panel");
   painter.text("Total amount", LEFT + 18, painter.currentY() - 5, 10, "muted");
-  painter.text(money(input.totalAmount, currency), PAGE_WIDTH - 220, painter.currentY() - 7, 22, "accent");
+  painter.text(money(input.totalAmount, currency, input.locale ?? "en-NG"), PAGE_WIDTH - 220, painter.currentY() - 7, 22, "accent");
   painter.move(68);
 
   if (input.notes?.length) {

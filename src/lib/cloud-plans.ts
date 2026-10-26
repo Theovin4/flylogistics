@@ -46,58 +46,72 @@ export type CloudEntitlementCompany = {
 
 export const CLOUD_TRIAL_DAYS = 14;
 
-export const cloudBillingPlans: Record<
-  CloudBillingPlan,
-  {
-    name: string;
-    amount: number;
-    currency: "NGN";
-    billingInterval: "monthly";
-    monthlyShipments: string;
-    maxUsers: number | null;
-    maxDrivers: number | null;
-    description: string;
-    features: string[];
-    envPlanKey: string;
-  }
-> = {
+export type CloudPlanDefinition = {
+  name: string;
+  billingInterval: "monthly";
+  monthlyShipments: string;
+  maxUsers: number | null;
+  maxDrivers: number | null;
+  description: string;
+  features: string[];
+};
+
+export type CloudPlanPrice = {
+  plan: CloudBillingPlan;
+  amount: number;
+  currency: string;
+  billingInterval: "monthly";
+  priceVersion: string;
+  provider: "flutterwave";
+  providerPlanId: string | null;
+  configured: boolean;
+};
+
+export const cloudPlanDefinitions: Record<CloudBillingPlan, CloudPlanDefinition> = {
   starter: {
     name: "Starter",
-    amount: 25000,
-    currency: "NGN",
     billingInterval: "monthly",
     monthlyShipments: "Operational starter workspace",
     maxUsers: 5,
     maxDrivers: 10,
     description: "For lean logistics teams that need shipment management, tracking, and customer visibility.",
-    envPlanKey: "FLUTTERWAVE_CLOUD_STARTER_PLAN_ID",
     features: ["Maximum 5 users", "Maximum 10 drivers", "Shipment management", "Customer portal", "Tracking", "Basic analytics", "Email support"]
   },
   growth: {
     name: "Growth",
-    amount: 75000,
-    currency: "NGN",
     billingInterval: "monthly",
     monthlyShipments: "Growing operations workspace",
     maxUsers: 20,
     maxDrivers: 100,
     description: "For active operators scaling dispatch, analytics, AI recommendations, and customer communications.",
-    envPlanKey: "FLUTTERWAVE_CLOUD_GROWTH_PLAN_ID",
     features: ["Maximum 20 users", "Maximum 100 drivers", "Shipment management", "Customer portal", "Tracking", "Advanced analytics", "AI dispatch", "WhatsApp notifications", "API access", "Priority support"]
   },
   scale: {
     name: "Scale",
-    amount: 200000,
-    currency: "NGN",
     billingInterval: "monthly",
     monthlyShipments: "Enterprise logistics workspace",
     maxUsers: null,
     maxDrivers: null,
     description: "For high-volume logistics companies that need unlimited teams, white-label controls, and dedicated support.",
-    envPlanKey: "FLUTTERWAVE_CLOUD_SCALE_PLAN_ID",
     features: ["Unlimited users", "Unlimited drivers", "Shipment management", "Customer portal", "Tracking", "Advanced analytics", "AI dispatch", "WhatsApp notifications", "API access", "White-label branding", "Custom integrations", "Dedicated account management"]
   }
 };
+
+export const legacyNgnCloudPlanPrices: Record<CloudBillingPlan, Omit<CloudPlanPrice, "providerPlanId" | "configured"> & { envPlanKey: string }> = {
+  starter: { plan: "starter", amount: 25000, currency: "NGN", billingInterval: "monthly", priceVersion: "2026-ngn-v1", provider: "flutterwave", envPlanKey: "FLUTTERWAVE_CLOUD_STARTER_PLAN_ID" },
+  growth: { plan: "growth", amount: 75000, currency: "NGN", billingInterval: "monthly", priceVersion: "2026-ngn-v1", provider: "flutterwave", envPlanKey: "FLUTTERWAVE_CLOUD_GROWTH_PLAN_ID" },
+  scale: { plan: "scale", amount: 200000, currency: "NGN", billingInterval: "monthly", priceVersion: "2026-ngn-v1", provider: "flutterwave", envPlanKey: "FLUTTERWAVE_CLOUD_SCALE_PLAN_ID" }
+};
+
+/** Compatibility projection for existing UI code. New billing code must use the server-side price catalogue. */
+export const cloudBillingPlans = Object.fromEntries(
+  (Object.keys(cloudPlanDefinitions) as CloudBillingPlan[]).map((plan) => [plan, {
+    ...cloudPlanDefinitions[plan],
+    amount: legacyNgnCloudPlanPrices[plan].amount,
+    currency: "NGN" as const,
+    envPlanKey: legacyNgnCloudPlanPrices[plan].envPlanKey
+  }])
+) as Record<CloudBillingPlan, CloudPlanDefinition & { amount: number; currency: "NGN"; envPlanKey: string }>;
 
 export function cloudTrialEndsAt(start = new Date()) {
   const date = new Date(start);
@@ -167,7 +181,7 @@ export function resolveCloudEntitlements(
 ): CloudEntitlements {
   const now = options.now ?? new Date();
   const plan = getCloudBillingPlanKey(company?.subscription_plan ?? company?.plan);
-  const configuredPlan = cloudBillingPlans[plan];
+  const configuredPlan = cloudPlanDefinitions[plan];
   const storedStatus = String(company?.subscription_status ?? "pending").trim().toLowerCase();
   const companyStatus = String(company?.status ?? "active").trim().toLowerCase();
   const internal = Boolean(options.internalCompanyId && company?.id === options.internalCompanyId);
@@ -208,18 +222,22 @@ export function hasCloudFeature(entitlements: CloudEntitlements, feature: CloudF
 export function validateCloudPaymentFacts(input: {
   plan: CloudBillingPlan;
   expectedReference: string;
+  expectedAmount?: number | string | null;
+  expectedCurrency?: string | null;
   transactionStatus?: string | null;
   transactionReference?: string | null;
   amount?: number | string | null;
   currency?: string | null;
 }) {
-  const expected = cloudBillingPlans[input.plan];
+  const expected = legacyNgnCloudPlanPrices[input.plan];
+  const expectedAmount = Number(input.expectedAmount ?? expected.amount);
+  const expectedCurrency = String(input.expectedCurrency ?? expected.currency).toUpperCase();
   const paidAmount = Number(input.amount ?? 0);
   return String(input.transactionStatus ?? "").toLowerCase() === "successful"
     && input.transactionReference === input.expectedReference
     && Number.isFinite(paidAmount)
-    && paidAmount === expected.amount
-    && String(input.currency ?? "").toUpperCase() === expected.currency;
+    && paidAmount === expectedAmount
+    && String(input.currency ?? "").toUpperCase() === expectedCurrency;
 }
 
 export function cloudPlanCan(plan: string | null | undefined, capability: CloudBrandCapability) {
